@@ -1,5 +1,5 @@
 {
-  "name": "asistente-de-estudio-ia-autodidacta-v1.5",
+  "name": "github-asistente-de-estudio-ia-autodidacta-v1.5",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,11 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "@google/genai": "^1.22.0",
-    "firebase": "^12.3.0",
-    "idb": "^8.0.0"
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@google/genai": "1.22.0",
+    "firebase": "10.12.2",
+    "idb": "8.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

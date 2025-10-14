@@ -1,5 +1,5 @@
 {
-  "name": "Asistente de Estudio IA Autodidacta v1.5",
+  "name": "GitHub Asistente de Estudio IA Autodidacta v1.5",
   "description": "Un asistente de estudio avanzado que utiliza IA para generar resúmenes, conceptos clave, ejemplos y cuestionarios a partir de tus materiales de estudio. También incluye un temporizador Pomodoro para ayudarte a estudiar de manera efectiva.",
   "requestFramePermissions": [
     "microphone"
