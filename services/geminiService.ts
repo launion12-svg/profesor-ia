@@ -28,8 +28,11 @@ const sanitizeForPrompt = (text: string) => {
     return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 };
 
-const callGenerativeModel = async (apiKey: string, prompt: string, responseSchema: any) => {
+const callGenerativeModel = async (apiKey: string, prompt: string, responseSchema: any, options?: { signal?: AbortSignal }) => {
+    if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const ai = getClient(apiKey);
+    // Note: The @google/genai library's generateContent doesn't natively support AbortSignal.
+    // The request will be handled by the `withTimeout` wrapper at a higher level.
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
@@ -44,7 +47,7 @@ const callGenerativeModel = async (apiKey: string, prompt: string, responseSchem
 
 // --- EXPORTED FUNCTIONS ---
 
-export const classifyContent = async (apiKey: string, text: string): Promise<AcademicContext> => {
+export const classifyContent = async (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<AcademicContext> => {
     const prompt = `Analiza el siguiente texto y clasifícalo en una de las siguientes categorías académicas: "Técnico", "Teórico", "Memorístico", "Resolución de Problemas", o "General". Extrae también hasta 5 palabras clave. Texto: "${sanitizeForPrompt(text.substring(0, 2000))}"`;
     const schema = {
         type: Type.OBJECT,
@@ -53,17 +56,17 @@ export const classifyContent = async (apiKey: string, text: string): Promise<Aca
             keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const generateTopicTitle = async (apiKey: string, text: string): Promise<string> => {
+export const generateTopicTitle = async (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<string> => {
     const prompt = `Genera un título corto y conciso (máximo 5 palabras) para el siguiente texto: "${sanitizeForPrompt(text.substring(0, 1000))}"`;
     const schema = { type: Type.OBJECT, properties: { title: { type: Type.STRING } } };
-    const result = await callGenerativeModel(apiKey, prompt, schema);
+    const result = await callGenerativeModel(apiKey, prompt, schema, options);
     return result.title;
 };
 
-export const generateMicroLessons = async (apiKey: string, text: string, context: AcademicContext): Promise<MicroLesson[]> => {
+export const generateMicroLessons = async (apiKey: string, text: string, context: AcademicContext, options?: { signal?: AbortSignal }): Promise<MicroLesson[]> => {
     const prompt = `Basado en el siguiente texto de categoría "${context.category}", divídelo en 5-7 micro-lecciones. Cada lección debe tener:
 1.  **title**: Título de la lección.
 2.  **content**: Contenido principal (2-3 párrafos).
@@ -124,7 +127,7 @@ Texto: "${sanitizeForPrompt(text)}"`;
         }
     };
 
-    const result = await callGenerativeModel(apiKey, prompt, schema);
+    const result = await callGenerativeModel(apiKey, prompt, schema, options);
     // Post-process to add quizContext and ensure unique IDs
     return result.lessons.map((lesson: any): MicroLesson => ({ 
         ...lesson, 
@@ -138,7 +141,7 @@ Texto: "${sanitizeForPrompt(text)}"`;
     }));
 };
 
-export const generateExplorationData = async (apiKey: string, text: string): Promise<ExplorationData> => {
+export const generateExplorationData = async (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<ExplorationData> => {
     const prompt = `Del siguiente texto, genera un mapa de temas (lista de 5-7 puntos principales), un resumen simple (1 párrafo corto), y 3 objetivos de aprendizaje (qué podrá hacer el estudiante). Texto: "${sanitizeForPrompt(text.substring(0, 4000))}"`;
     const schema = {
         type: Type.OBJECT,
@@ -148,10 +151,11 @@ export const generateExplorationData = async (apiKey: string, text: string): Pro
             learningObjectives: { type: Type.ARRAY, items: { type: Type.STRING } }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const generatePersonalizedStudyGuide = async (apiKey: string, studyText: string, weakConcepts: string[], summaries: any[]): Promise<string> => {
+export const generatePersonalizedStudyGuide = async (apiKey: string, studyText: string, weakConcepts: string[], summaries: any[], options?: { signal?: AbortSignal }): Promise<string> => {
+    if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const prompt = `Crea una guía de estudio personalizada en formato Markdown. Primero, resume el texto principal. Luego, enfócate en explicar en detalle los siguientes conceptos débiles: ${weakConcepts.join(', ')}. Finalmente, integra las notas del estudiante si las hay. Texto: "${sanitizeForPrompt(studyText)}"`;
     const ai = getClient(apiKey);
     const response = await ai.models.generateContent({
@@ -161,7 +165,7 @@ export const generatePersonalizedStudyGuide = async (apiKey: string, studyText: 
     return response.text;
 };
 
-export const generateMindMap = async (apiKey: string, studyText: string): Promise<MindMapData> => {
+export const generateMindMap = async (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<MindMapData> => {
     const prompt = `Analiza el siguiente texto, que parece ser un índice o un resumen de conceptos. Tu tarea es convertir este texto en una estructura de mapa mental jerárquico bien organizada. El resultado DEBE ser un objeto JSON válido y nada más.
 
     **Instrucciones Clave:**
@@ -220,10 +224,10 @@ export const generateMindMap = async (apiKey: string, studyText: string): Promis
             }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const generateQuiz = async (apiKey: string, studyText: string): Promise<QuizQuestion[]> => {
+export const generateQuiz = async (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => {
     const prompt = `Genera un cuestionario de 5 preguntas de opción múltiple sobre el siguiente texto. Cada pregunta debe tener 4 opciones y una respuesta correcta. Texto: "${sanitizeForPrompt(studyText)}"`;
     const schema = {
         type: Type.OBJECT,
@@ -241,11 +245,12 @@ export const generateQuiz = async (apiKey: string, studyText: string): Promise<Q
             }
         }
     };
-    const result = await callGenerativeModel(apiKey, prompt, schema);
+    const result = await callGenerativeModel(apiKey, prompt, schema, options);
     return result.quiz;
 };
 
-export const generateCheatSheetSummary = async (apiKey: string, studyText: string): Promise<string> => {
+export const generateCheatSheetSummary = async (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<string> => {
+    if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const prompt = `Crea un "resumen chuleta" del siguiente texto. Debe ser muy conciso, usando puntos clave, listas y negritas (formato Markdown). Ideal para un repaso rápido. Texto: "${sanitizeForPrompt(studyText)}"`;
     const ai = getClient(apiKey);
     const response = await ai.models.generateContent({
@@ -255,7 +260,7 @@ export const generateCheatSheetSummary = async (apiKey: string, studyText: strin
     return response.text;
 };
 
-export const generatePracticeExercises = async (apiKey: string, studyText: string, weakConcepts: string[], academicContext?: AcademicContext): Promise<Exercise[]> => {
+export const generatePracticeExercises = async (apiKey: string, studyText: string, weakConcepts: string[], academicContext?: AcademicContext, options?: { signal?: AbortSignal }): Promise<Exercise[]> => {
     const prompt = `Genera 3 ejercicios de práctica sobre el siguiente texto, enfocados en los conceptos: ${weakConcepts.join(', ')}. La categoría del texto es "${academicContext?.category}". Cada ejercicio debe tener un enunciado, un nivel de dificultad ('básico', 'intermedio', 'avanzado'), y una lista de los conceptos que evalúa. Texto: "${sanitizeForPrompt(studyText)}"`;
     const schema = {
         type: Type.OBJECT,
@@ -273,11 +278,11 @@ export const generatePracticeExercises = async (apiKey: string, studyText: strin
             }
         }
     };
-    const result = await callGenerativeModel(apiKey, prompt, schema);
+    const result = await callGenerativeModel(apiKey, prompt, schema, options);
     return result.exercises;
 };
 
-export const validatePracticeAttempt = async (apiKey: string, statement: string, userAttempt: string, studyText: string, academicContext?: AcademicContext): Promise<{ isCorrect: boolean; feedback: string; }> => {
+export const validatePracticeAttempt = async (apiKey: string, statement: string, userAttempt: string, studyText: string, academicContext?: AcademicContext, options?: { signal?: AbortSignal }): Promise<{ isCorrect: boolean; feedback: string; }> => {
     const prompt = `Evalúa la solución de un estudiante. El enunciado era: "${sanitizeForPrompt(statement)}". La solución del estudiante es: "${sanitizeForPrompt(userAttempt)}". El contexto es este texto: "${sanitizeForPrompt(studyText)}". Determina si la respuesta es correcta y proporciona un feedback constructivo.`;
     const schema = {
         type: Type.OBJECT,
@@ -286,10 +291,10 @@ export const validatePracticeAttempt = async (apiKey: string, statement: string,
             feedback: { type: Type.STRING }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const generateTargetedReinforcementLesson = async (apiKey: string, failedConcepts: string[], studyText: string): Promise<ReinforcementContent> => {
+export const generateTargetedReinforcementLesson = async (apiKey: string, failedConcepts: string[], studyText: string, options?: { signal?: AbortSignal }): Promise<ReinforcementContent> => {
     const prompt = `El estudiante falló en estos conceptos: ${failedConcepts.join(', ')}. Basado en el texto original, genera una nueva explicación y una nueva analogía para aclarar estos puntos. Texto: "${sanitizeForPrompt(studyText)}"`;
     const schema = {
         type: Type.OBJECT,
@@ -298,10 +303,11 @@ export const generateTargetedReinforcementLesson = async (apiKey: string, failed
             newAnalogy: { type: Type.STRING }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const getChatbotResponse = async (apiKey: string, lessonContent: string, userInput: string, history: { role: string, text: string }[]): Promise<string> => {
+export const getChatbotResponse = async (apiKey: string, lessonContent: string, userInput: string, history: { role: string, text: string }[], options?: { signal?: AbortSignal }): Promise<string> => {
+    if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const historyString = history.map(m => `${m.role}: ${sanitizeForPrompt(m.text)}`).join('\n');
     const prompt = `Eres un tutor de IA. El estudiante está estudiando sobre: "${sanitizeForPrompt(lessonContent.substring(0, 1000))}...". El historial de chat es:\n${historyString}\nEstudiante: "${sanitizeForPrompt(userInput)}"\nResponde como un tutor amigable.`;
     const ai = getClient(apiKey);
@@ -312,12 +318,12 @@ export const getChatbotResponse = async (apiKey: string, lessonContent: string, 
     return response.text;
 };
 
-export const generateReinforcementContent = async (apiKey: string, lessonTitle: string, lessonContent: string): Promise<ReinforcementContent> => {
+export const generateReinforcementContent = async (apiKey: string, lessonTitle: string, lessonContent: string, options?: { signal?: AbortSignal }): Promise<ReinforcementContent> => {
     const prompt = `Para la lección "${sanitizeForPrompt(lessonTitle)}", genera una explicación alternativa y una nueva analogía para reforzar el contenido. Contenido Original: "${sanitizeForPrompt(lessonContent)}"`;
-    return generateTargetedReinforcementLesson(apiKey, [lessonTitle], lessonContent); // Re-use logic
+    return generateTargetedReinforcementLesson(apiKey, [lessonTitle], lessonContent, options); // Re-use logic
 };
 
-export const generateAdvancedReinforcement = async (apiKey: string, lessonContent: string): Promise<AdvancedReinforcementContent> => {
+export const generateAdvancedReinforcement = async (apiKey: string, lessonContent: string, options?: { signal?: AbortSignal }): Promise<AdvancedReinforcementContent> => {
     const prompt = `Genera un refuerzo avanzado para este contenido. Elige entre crear una 'mnemotecnia' o una 'historia' que encapsule los puntos clave. Contenido: "${sanitizeForPrompt(lessonContent)}"`;
     const schema = {
         type: Type.OBJECT,
@@ -327,10 +333,10 @@ export const generateAdvancedReinforcement = async (apiKey: string, lessonConten
             content: { type: Type.STRING }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const generateReinforcementQuiz = async (apiKey: string, lessonTitle: string, reinforcementContent: string): Promise<QuizQuestion[]> => {
+export const generateReinforcementQuiz = async (apiKey: string, lessonTitle: string, reinforcementContent: string, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => {
     const prompt = `Crea un mini-quiz de 2 preguntas de opción múltiple (3 opciones cada una) sobre este contenido de refuerzo para la lección "${sanitizeForPrompt(lessonTitle)}". Contenido: "${sanitizeForPrompt(reinforcementContent)}"`;
     const schema = {
         type: Type.OBJECT,
@@ -348,16 +354,16 @@ export const generateReinforcementQuiz = async (apiKey: string, lessonTitle: str
             }
         }
     };
-    const result = await callGenerativeModel(apiKey, prompt, schema);
+    const result = await callGenerativeModel(apiKey, prompt, schema, options);
     return result.quiz;
 };
 
-export const generateMixedTopicQuiz = async (apiKey: string, weakConcepts: string[], courseContext: string): Promise<QuizQuestion[]> => {
+export const generateMixedTopicQuiz = async (apiKey: string, weakConcepts: string[], courseContext: string, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => {
     const prompt = `Crea un cuestionario mixto de 5 preguntas de opción múltiple (4 opciones) que abarque los siguientes conceptos débiles: ${weakConcepts.join(', ')}.`;
-    return generateQuiz(apiKey, prompt); // Re-use simpler quiz generator
+    return generateQuiz(apiKey, prompt, options); // Re-use simpler quiz generator
 };
 
-export const generateFlashcardsForPractice = async (apiKey: string, studyText: string): Promise<Flashcard[]> => {
+export const generateFlashcardsForPractice = async (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<Flashcard[]> => {
     const prompt = `Genera una lista de 10 flashcards (pregunta y respuesta corta) basadas en el siguiente texto. Texto: "${sanitizeForPrompt(studyText)}"`;
     const schema = {
         type: Type.OBJECT,
@@ -374,11 +380,11 @@ export const generateFlashcardsForPractice = async (apiKey: string, studyText: s
             }
         }
     };
-    const result = await callGenerativeModel(apiKey, prompt, schema);
+    const result = await callGenerativeModel(apiKey, prompt, schema, options);
     return result.flashcards;
 };
 
-export const validateFeynmanExplanation = async (apiKey: string, lessonContent: string, userExplanation: string): Promise<{ is_accurate: boolean; feedback: string; }> => {
+export const validateFeynmanExplanation = async (apiKey: string, lessonContent: string, userExplanation: string, options?: { signal?: AbortSignal }): Promise<{ is_accurate: boolean; feedback: string; }> => {
     const prompt = `Actúa como un tutor experto. Evalúa la siguiente explicación de un estudiante ("Explicación del Estudiante") basada en el texto original de la lección ("Contenido Original"). Determina si la explicación del estudiante es precisa y clara. Proporciona un feedback corto y constructivo.
 
     Contenido Original: "${sanitizeForPrompt(lessonContent)}"
@@ -393,10 +399,10 @@ export const validateFeynmanExplanation = async (apiKey: string, lessonContent: 
             feedback: { type: Type.STRING, description: "Feedback corto y constructivo para el estudiante." }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const validateCheckQuestionAnswer = async (apiKey: string, question: string, userAnswer: string, concepts: WeightedConcept[], passingThreshold: number, idealAnswer: string): Promise<{ isCorrect: boolean; feedback: string; missedConcepts: string[] }> => {
+export const validateCheckQuestionAnswer = async (apiKey: string, question: string, userAnswer: string, concepts: WeightedConcept[], passingThreshold: number, idealAnswer: string, options?: { signal?: AbortSignal }): Promise<{ isCorrect: boolean; feedback: string; missedConcepts: string[] }> => {
     const prompt = `
     Eres un tutor de IA experto en evaluación semántica. Tu tarea es evaluar la respuesta de un estudiante basándote en conceptos clave ponderados.
 
@@ -429,10 +435,10 @@ export const validateCheckQuestionAnswer = async (apiKey: string, question: stri
             missedConcepts: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Una lista de las 'ideas' de los conceptos que faltaron en la respuesta del estudiante." }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 };
 
-export const generateContextualAnalogy = async (apiKey: string, concept: string, lessonContent: string): Promise<{ analogy: string }> => {
+export const generateContextualAnalogy = async (apiKey: string, concept: string, lessonContent: string, options?: { signal?: AbortSignal }): Promise<{ analogy: string }> => {
     const prompt = `Un estudiante no ha mencionado el siguiente concepto clave en su respuesta: "${sanitizeForPrompt(concept)}". Basado en el contenido de la lelección, crea una analogía muy corta y simple (una frase) para ayudarle a entender específicamente ESE concepto.
 
     Contenido de la Lección: "${sanitizeForPrompt(lessonContent.substring(0, 1500))}"
@@ -444,11 +450,11 @@ export const generateContextualAnalogy = async (apiKey: string, concept: string,
             analogy: { type: Type.STRING, description: "Una analogía de una sola frase para explicar el concepto." }
         }
     };
-    return callGenerativeModel(apiKey, prompt, schema);
+    return callGenerativeModel(apiKey, prompt, schema, options);
 }
 
 
-export const generateFocusedReviewQuiz = async (apiKey: string, weakPoint: WeakPoint): Promise<QuizQuestion[]> => {
+export const generateFocusedReviewQuiz = async (apiKey: string, weakPoint: WeakPoint, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => {
     const prompt = `
     Genera un cuestionario de repaso enfocado de 3 preguntas de opción múltiple para el concepto clave: "${sanitizeForPrompt(weakPoint.concept)}".
     Este concepto pertenece a la lección "${sanitizeForPrompt(weakPoint.lessonTitle)}" del tema "${sanitizeForPrompt(weakPoint.topicTitle)}".
@@ -481,6 +487,6 @@ export const generateFocusedReviewQuiz = async (apiKey: string, weakPoint: WeakP
             }
         }
     };
-    const result = await callGenerativeModel(apiKey, prompt, schema);
+    const result = await callGenerativeModel(apiKey, prompt, schema, options);
     return result.quiz;
 };

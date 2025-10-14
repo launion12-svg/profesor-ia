@@ -13,11 +13,9 @@ import BugIcon from './icons/BugIcon';
 import type { StudySession, StudyMethod, User, Course, WeakPoint } from '../types';
 import { formatRelativeTime, formatStudyTime } from '../utils';
 
-declare const pdfjsLib: any;
-
 interface WelcomeScreenProps {
   user: User;
-  onStart: (text: string, method: StudyMethod, course: Course, title: string) => void;
+  onStart: (file: File, method: StudyMethod, course: Course) => void;
   onExploreTechniques: () => void;
   onStartSmartReview: () => void;
   onShowGlobalDashboard: () => void;
@@ -73,10 +71,8 @@ const TopicsToReinforceCard: React.FC<{ weakPoints: WeakPoint[]; onStartReview: 
 
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreTechniques, onStartSmartReview, onShowGlobalDashboard, isAiReady, courses, onCreateCourse, pausedSessions, completedSessions, onResume, onReview, onTopicReview, onDiscard, weakPoints, onStartFocusedReview, onStartPendingPractice, allSessions, onOpenBugReportModal }) => {
-  const [extractedText, setExtractedText] = useState('');
-  const [isExtracting, setIsExtracting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<StudyMethod>('pomodoro');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -112,41 +108,19 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
       localStorage.removeItem('pendingPracticeReview');
       setPendingReview(null);
   };
-
-
-  const extractTextFromPdf = useCallback(async (selectedFile: File) => {
-    if (!selectedFile || !selectedFile.type.includes('pdf')) {
+  
+  const handleFileSelect = (file: File) => {
+    if (!file || !file.type.includes('pdf')) {
       setError('Por favor, sube solo archivos PDF.');
+      setSelectedFile(null);
       return;
     }
-    setIsExtracting(true);
     setError(null);
-    setExtractedText('');
-    setFileName(selectedFile.name);
+    setSelectedFile(file);
     setSelectedCourseId('');
     setNewCourseName('');
+  };
 
-    try {
-      const arrayBuffer = await selectedFile.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-      const numPages = pdf.numPages;
-      let fullText = '';
-      for (let i = 1; i <= numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(' ');
-        fullText += pageText + '\n';
-      }
-      setExtractedText(fullText);
-    } catch (err) {
-      console.error("Error processing PDF:", err);
-      setError('Error al procesar el PDF. Por favor, intenta con otro archivo.');
-      setFileName(null);
-    } finally {
-      setIsExtracting(false);
-    }
-  }, []);
-  
   useEffect(() => {
     // Auto-select the first course if available
     if (courses.length > 0 && !selectedCourseId) {
@@ -157,15 +131,14 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files[0]) {
-      extractTextFromPdf(files[0]);
+      handleFileSelect(files[0]);
     }
   };
 
   const handleStart = () => {
     const selectedCourse = courses.find(c => c.id === selectedCourseId);
-    if (extractedText.trim() && selectedCourse && fileName) {
-      const title = fileName.replace(/\.pdf$/i, '');
-      onStart(extractedText, selectedMethod, selectedCourse, title);
+    if (selectedFile && selectedCourse) {
+      onStart(selectedFile, selectedMethod, selectedCourse);
     }
   };
   
@@ -208,11 +181,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
     setIsDraggingOver(false);
     const files = event.dataTransfer.files;
     if (files && files[0]) {
-      extractTextFromPdf(files[0]);
+      handleFileSelect(files[0]);
     }
   };
   
-  const isReadyToStart = extractedText.trim() !== '' && selectedCourseId !== '';
+  const isReadyToStart = !!selectedFile && selectedCourseId !== '';
 
   return (
     <div className="flex flex-col items-center w-full max-w-6xl mx-auto text-center">
@@ -249,14 +222,48 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
 
       {weakPoints.length > 0 && <TopicsToReinforceCard weakPoints={weakPoints} onStartReview={onStartFocusedReview} />}
 
-      {pausedSessions.length > 0 && (
+      {pausedSessions.map(s => s.status).includes('pending_generation') && (
+        <div className="w-full mb-10 animate-fade-in">
+          <h3 className="text-2xl font-bold mb-4 flex items-center justify-center text-gray-300">
+            <BookmarkIcon />
+            <span className="ml-2">Sesiones en Modo Seguro</span>
+          </h3>
+          <div className="space-y-3 p-4 bg-gray-800/50 border border-amber-500/50 rounded-lg">
+             {pausedSessions.filter(s => s.status === 'pending_generation').map(session => (
+              <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
+                <div className="flex-grow text-left">
+                  <p className="font-semibold text-gray-200">{session.title}</p>
+                  <p className="text-sm text-amber-400">Listo para generar contenido con IA.</p>
+                </div>
+                <div className="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
+                   <button
+                    onClick={() => onDiscard(session.id)}
+                    className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full transition-colors"
+                    title="Descartar sesión"
+                  >
+                    <TrashIcon />
+                  </button>
+                  <button
+                    onClick={() => onResume(session.id)}
+                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+                  >
+                    Generar ahora
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pausedSessions.filter(s => s.status === 'paused').length > 0 && (
         <div className="w-full mb-10 animate-fade-in">
           <h3 className="text-2xl font-bold mb-4 flex items-center justify-center text-gray-300">
             <BookmarkIcon />
             <span className="ml-2">Sesiones Guardadas</span>
           </h3>
           <div className="space-y-3 max-h-80 overflow-y-auto pr-2 bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            {pausedSessions.map(session => (
+            {pausedSessions.filter(s => s.status === 'paused').map(session => (
               <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
                 <div className="flex-grow text-left">
                   <p className="font-semibold text-gray-200">{session.title}</p>
@@ -364,30 +371,25 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".pdf" className="hidden" />
             
             <div
-              onClick={!isExtracting ? openFilePicker : undefined}
+              onClick={openFilePicker}
               onDrop={handleFileDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
-              className={`flex flex-col items-center justify-center w-full p-4 border-2 border-dashed rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center w-full p-4 border-2 border-dashed rounded-lg transition-colors cursor-pointer ${
                 isDraggingOver
                   ? 'border-purple-500 bg-gray-700'
-                  : fileName
+                  : selectedFile
                   ? 'border-green-500 bg-gray-700/30'
                   : 'border-gray-600 hover:bg-gray-700/30'
-              } ${!isExtracting ? 'cursor-pointer' : 'cursor-default'}`}
+              }`}
               role="button"
-              tabIndex={!isExtracting ? 0 : -1}
-              onKeyPress={(e) => { if (!isExtracting && (e.key === 'Enter' || e.key === ' ')) openFilePicker(); }}
+              tabIndex={0}
+              onKeyPress={(e) => { if (e.key === 'Enter' || e.key === ' ') openFilePicker(); }}
             >
-              {isExtracting ? (
-                <div className="flex flex-col items-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mb-2"></div>
-                  <p className="text-gray-300 text-sm">Analizando documento...</p>
-                </div>
-              ) : fileName ? (
+              {selectedFile ? (
                 <div className="text-center py-4">
                   <p className="font-semibold text-green-400">¡Documento listo!</p>
-                  <p className="text-gray-400 mt-1 text-sm">{fileName}</p>
+                  <p className="text-gray-400 mt-1 text-sm">{selectedFile.name}</p>
                   <p className="text-xs text-indigo-400 mt-2 animate-fade-in">✨ La IA detectará el tipo de contenido para adaptar tu aprendizaje.</p>
                   <p className="text-xs text-gray-500 mt-1">{isDraggingOver ? 'Suelta para reemplazar' : 'O arrastra otro archivo'}</p>
                 </div>
@@ -403,7 +405,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
 
             {error && <p className="mt-4 text-red-400">{error}</p>}
             
-            {extractedText && (
+            {selectedFile && (
               <div className="w-full mt-6 text-left p-4 bg-gray-900/50 rounded-lg animate-fade-in">
                   <h3 className="text-xl font-bold mb-3 text-center text-gray-200">Asignar Asignatura</h3>
                   <p className="text-sm text-gray-400 text-center mb-4">Contextualiza tu estudio para un mejor seguimiento.</p>
@@ -460,11 +462,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
           <div className="mt-auto pt-6 w-full">
               <button
                 onClick={handleStart}
-                disabled={!isReadyToStart || isExtracting}
+                disabled={!isReadyToStart}
                 className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
                 title={!isReadyToStart ? 'Sube un PDF y selecciona una asignatura para comenzar' : 'Iniciar Sesión de Estudio'}
               >
-                {isExtracting ? 'Procesando...' : !isReadyToStart ? 'Sube un PDF y elige asignatura' : 'Iniciar Sesión de Estudio'}
+                {!isReadyToStart ? 'Sube un PDF y elige asignatura' : 'Iniciar Sesión de Estudio'}
               </button>
           </div>
         </div>

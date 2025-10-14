@@ -20,14 +20,14 @@ const mock = <T>(data: T): Promise<T> => new Promise(resolve => setTimeout(() =>
 
 // --- MOCK IMPLEMENTATIONS ---
 
-export const classifyContent = (apiKey: string, text: string): Promise<AcademicContext> => mock({
+export const classifyContent = (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<AcademicContext> => mock({
   category: 'General',
   keywords: ['mock data', 'openai', 'fallback']
 });
 
-export const generateTopicTitle = (apiKey: string, text: string): Promise<string> => mock("Título de Ejemplo (OpenAI)");
+export const generateTopicTitle = (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<string> => mock("Título de Ejemplo (OpenAI)");
 
-export const generateMicroLessons = (apiKey: string, text: string, context: AcademicContext): Promise<MicroLesson[]> => mock([
+export const generateMicroLessons = (apiKey: string, text: string, context: AcademicContext, options?: { signal?: AbortSignal }): Promise<MicroLesson[]> => mock([
     {
         id: 'mock-lesson-1',
         title: "Concepto Clave de Muestra",
@@ -68,17 +68,17 @@ export const generateMicroLessons = (apiKey: string, text: string, context: Acad
     }
 ]);
 
-export const generateExplorationData = (apiKey: string, text: string): Promise<ExplorationData> => mock({
+export const generateExplorationData = (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<ExplorationData> => mock({
     topicMap: ["Tema Principal 1 (Mock)", "Tema Principal 2 (Mock)", "Tema Principal 3 (Mock)"],
     simpleSummary: "Este es un resumen de ejemplo generado por el servicio de OpenAI (mock). Describe brevemente de qué trata el documento que subiste.",
     learningObjectives: ["Entender el concepto de datos mock.", "Ver cómo la UI maneja la información.", "Aprender a seguir adelante."]
 });
 
-export const generatePersonalizedStudyGuide = (apiKey: string, studyText: string, weakConcepts: string[], summaries: any[]): Promise<string> => mock(
+export const generatePersonalizedStudyGuide = (apiKey: string, studyText: string, weakConcepts: string[], summaries: any[], options?: { signal?: AbortSignal }): Promise<string> => mock(
     `# Guía de Estudio (Mock de OpenAI)\n\nEste es un resumen del material. Se enfocaría especialmente en los puntos débiles como **${weakConcepts.join(', ')}**.`
 );
 
-export const generateMindMap = (apiKey: string, studyText: string): Promise<MindMapData> => mock({
+export const generateMindMap = (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<MindMapData> => mock({
     root: {
         topic: "Tema Central (Mock)",
         children: [
@@ -88,7 +88,7 @@ export const generateMindMap = (apiKey: string, studyText: string): Promise<Mind
     }
 });
 
-export const generateQuiz = (apiKey: string, studyText: string): Promise<QuizQuestion[]> => mock([
+export const generateQuiz = (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => mock([
     {
         question: "¿Qué servicio generó esta pregunta?",
         options: ["Gemini", "OpenAI (Mock)", "Un humano", "Ninguna de las anteriores"],
@@ -96,11 +96,11 @@ export const generateQuiz = (apiKey: string, studyText: string): Promise<QuizQue
     }
 ]);
 
-export const generateCheatSheetSummary = (apiKey: string, studyText: string): Promise<string> => mock(
+export const generateCheatSheetSummary = (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<string> => mock(
     "### Resumen Rápido (Mock)\n\n*   **Punto 1:** Esto es un ejemplo.\n*   **Punto 2:** Los datos no son reales."
 );
 
-export const generatePracticeExercises = (apiKey: string, studyText: string, weakConcepts: string[], academicContext?: AcademicContext): Promise<Exercise[]> => mock([
+export const generatePracticeExercises = (apiKey: string, studyText: string, weakConcepts: string[], academicContext?: AcademicContext, options?: { signal?: AbortSignal }): Promise<Exercise[]> => mock([
     {
         statement: "Describe cómo funciona un servicio de mock en una aplicación web.",
         difficulty: 'básico',
@@ -108,32 +108,32 @@ export const generatePracticeExercises = (apiKey: string, studyText: string, wea
     }
 ]);
 
-export const validatePracticeAttempt = (apiKey: string, statement: string, userAttempt: string, studyText: string, academicContext?: AcademicContext): Promise<{ isCorrect: boolean; feedback: string; }> => mock({
+export const validatePracticeAttempt = (apiKey: string, statement: string, userAttempt: string, studyText: string, academicContext?: AcademicContext, options?: { signal?: AbortSignal }): Promise<{ isCorrect: boolean; feedback: string; }> => mock({
     isCorrect: true,
     feedback: "¡Respuesta de ejemplo correcta! Buen trabajo describiendo el concepto."
 });
 
-export const generateTargetedReinforcementLesson = (apiKey: string, failedConcepts: string[], studyText: string): Promise<ReinforcementContent> => mock({
+export const generateTargetedReinforcementLesson = (apiKey: string, failedConcepts: string[], studyText: string, options?: { signal?: AbortSignal }): Promise<ReinforcementContent> => mock({
     newExplanation: `Aquí tienes una nueva explicación sobre ${failedConcepts.join(', ')}. Este texto es solo un ejemplo.`,
     newAnalogy: "Es como tener un actor de reemplazo en una obra de teatro; no es el original, pero cumple su función."
 });
 
-export const getChatbotResponse = (apiKey: string, lessonContent: string, userInput: string, history: any[]): Promise<string> => mock(
+export const getChatbotResponse = (apiKey: string, lessonContent: string, userInput: string, history: any[], options?: { signal?: AbortSignal }): Promise<string> => mock(
     "Soy un chatbot de OpenAI (mock). Gracias por tu pregunta. ¡Sigue estudiando!"
 );
 
-export const generateReinforcementContent = (apiKey: string, lessonTitle: string, lessonContent: string): Promise<ReinforcementContent> => mock({
+export const generateReinforcementContent = (apiKey: string, lessonTitle: string, lessonContent: string, options?: { signal?: AbortSignal }): Promise<ReinforcementContent> => mock({
     newExplanation: `Esta es una explicación alternativa (mock) para la lección "${lessonTitle}".`,
     newAnalogy: "Piénsalo de esta otra manera (mock)."
 });
 
-export const generateAdvancedReinforcement = (apiKey: string, lessonContent: string): Promise<AdvancedReinforcementContent> => mock({
+export const generateAdvancedReinforcement = (apiKey: string, lessonContent: string, options?: { signal?: AbortSignal }): Promise<AdvancedReinforcementContent> => mock({
     type: 'story',
     title: "Una Historia de Muestra (Mock)",
     content: "Había una vez un desarrollador que necesitaba datos de ejemplo..."
 });
 
-export const generateReinforcementQuiz = (apiKey: string, lessonTitle: string, reinforcementContent: string): Promise<QuizQuestion[]> => mock([
+export const generateReinforcementQuiz = (apiKey: string, lessonTitle: string, reinforcementContent: string, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => mock([
     {
         question: "¿Este cuestionario es real?",
         options: ["Sí", "No", "Quizás"],
@@ -141,7 +141,7 @@ export const generateReinforcementQuiz = (apiKey: string, lessonTitle: string, r
     }
 ]);
 
-export const generateMixedTopicQuiz = (apiKey: string, weakConcepts: string[], courseContext: string): Promise<QuizQuestion[]> => mock([
+export const generateMixedTopicQuiz = (apiKey: string, weakConcepts: string[], courseContext: string, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => mock([
     {
         question: `¿Cuál de estos es un concepto débil que estás repasando? (Mock)`,
         options: [weakConcepts[0] || "Ejemplo A", "Concepto Fuerte", "Otro Concepto"],
@@ -149,17 +149,17 @@ export const generateMixedTopicQuiz = (apiKey: string, weakConcepts: string[], c
     }
 ]);
 
-export const generateFlashcardsForPractice = (apiKey: string, studyText: string): Promise<Flashcard[]> => mock([
+export const generateFlashcardsForPractice = (apiKey: string, studyText: string, options?: { signal?: AbortSignal }): Promise<Flashcard[]> => mock([
     { question: "¿Qué es un mock?", answer: "Datos de ejemplo" },
     { question: "¿Qué API se está usando aquí?", answer: "OpenAI (Mock)" }
 ]);
 
-export const validateFeynmanExplanation = (apiKey: string, lessonContent: string, userExplanation: string): Promise<{ is_accurate: boolean; feedback: string; }> => mock({
+export const validateFeynmanExplanation = (apiKey: string, lessonContent: string, userExplanation: string, options?: { signal?: AbortSignal }): Promise<{ is_accurate: boolean; feedback: string; }> => mock({
     is_accurate: true,
     feedback: "¡Excelente explicación! Has captado la idea principal de forma clara y concisa. ¡Muy buen trabajo aplicando la técnica de Feynman!"
 });
 
-export const validateCheckQuestionAnswer = async (apiKey: string, question: string, userAnswer: string, concepts: WeightedConcept[], passingThreshold: number, idealAnswer: string): Promise<{ isCorrect: boolean; feedback: string; missedConcepts: string[] }> => {
+export const validateCheckQuestionAnswer = async (apiKey: string, question: string, userAnswer: string, concepts: WeightedConcept[], passingThreshold: number, idealAnswer: string, options?: { signal?: AbortSignal }): Promise<{ isCorrect: boolean; feedback: string; missedConcepts: string[] }> => {
     const lowerUserAnswer = userAnswer.toLowerCase();
     let score = 0;
     const missedConcepts: string[] = [];
@@ -182,13 +182,13 @@ export const validateCheckQuestionAnswer = async (apiKey: string, question: stri
     return mock({ isCorrect, feedback, missedConcepts });
 };
 
-export const generateContextualAnalogy = (apiKey: string, concept: string, lessonContent: string): Promise<{ analogy: string }> => {
+export const generateContextualAnalogy = (apiKey: string, concept: string, lessonContent: string, options?: { signal?: AbortSignal }): Promise<{ analogy: string }> => {
     return mock({ analogy: `(Analogía de ejemplo) Piensa en "${concept}" como una pieza clave en un rompecabezas.` });
 };
 
 
 // FIX: Unify signature to use WeakPoint object for consistency with geminiService and components.
-export const generateFocusedReviewQuiz = (apiKey: string, weakPoint: WeakPoint): Promise<QuizQuestion[]> => mock([
+export const generateFocusedReviewQuiz = (apiKey: string, weakPoint: WeakPoint, options?: { signal?: AbortSignal }): Promise<QuizQuestion[]> => mock([
     {
         question: `Pregunta de repaso sobre "${weakPoint.lessonTitle}" (Mock)`,
         options: ["Opción 1", "Opción 2", "Respuesta Correcta"],

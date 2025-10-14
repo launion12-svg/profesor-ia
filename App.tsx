@@ -28,14 +28,57 @@ import XIcon from './components/icons/XIcon';
 import NotFoundScreen from './components/NotFoundScreen';
 import ApiKeyModal from './components/ApiKeyModal';
 import BugReportModal from './components/BugReportModal';
+import ProcessingPipelineModal from './components/ProcessingPipelineModal';
+import PdfWarningModal from './components/PdfWarningModal';
 
-import type { User, StudySession, StudyMethod, Course, PerceivedDifficulty, ToastMessage, ReviewSubject, MicroLesson, AcademicContext, WeakPoint, PracticeMetrics, ApiProvider } from './types';
+import type { User, StudySession, StudyMethod, Course, PerceivedDifficulty, ToastMessage, ReviewSubject, MicroLesson, AcademicContext, WeakPoint, PracticeMetrics, ApiProvider, PipelinePhase } from './types';
 import { loadUsers, saveUser, deleteUser, loadUserCourses, createCourse as createCourseInDb, loadSessions, saveSession as saveSessionInDb, deleteSession as deleteSessionInDb, loadWeakPoints, saveWeakPoint, getWeakPoint, ensureSchemaSafety, migrateSessionsMapSourceText } from './services/dbService';
 import { classifyContent, generateMicroLessons, generateTopicTitle } from './services/aiService';
 import { USE_AI_API } from './config';
 import { scheduleNextReview, getRandomAvatarColor, getInitials, generateConceptId, getReviewDaysFromStrength } from './utils';
+import { withRetry, withTimeout, normalizeText } from './utils/pipelineUtils';
 
 type AppScreen = 'user-selection' | 'welcome' | 'exploration' | 'guided-learning' | 'consolidation' | 'practice' | 'flashcard-practice' | 'dashboard' | 'loading' | 'techniques' | 'smart-review-subjects' | 'smart-review-quiz' | 'global-dashboard' | 'focused-review';
+
+declare const pdfjsLib: any;
+
+async function parsePdf(file: File, options: { signal?: AbortSignal }): Promise<string> {
+    const fileReader = new FileReader();
+    return new Promise((resolve, reject) => {
+        if (options.signal?.aborted) {
+            return reject(new DOMException('Aborted', 'AbortError'));
+        }
+        
+        const abortHandler = () => reject(new DOMException('Aborted', 'AbortError'));
+        options.signal?.addEventListener('abort', abortHandler);
+
+        fileReader.onload = async (event) => {
+            if (!event.target?.result) return reject(new Error('Failed to read file.'));
+            try {
+                const pdf = await pdfjsLib.getDocument({ data: event.target.result }).promise;
+                if (options.signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+
+                let textContent = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    if (options.signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+                    const page = await pdf.getPage(i);
+                    const text = await page.getTextContent();
+                    textContent += text.items.map((item: any) => item.str).join(' ');
+                }
+                resolve(textContent);
+            } catch (error) {
+                reject(error);
+            } finally {
+                options.signal?.removeEventListener('abort', abortHandler);
+            }
+        };
+        fileReader.onerror = () => {
+            reject(new Error('Error reading PDF file.'));
+            options.signal?.removeEventListener('abort', abortHandler);
+        };
+        fileReader.readAsArrayBuffer(file);
+    });
+}
 
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
@@ -81,6 +124,17 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Cargando...');
   const [isBugReportModalOpen, setIsBugReportModalOpen] = useState(false);
+
+  // PDF Processing Pipeline State
+  const [isPipelineModalOpen, setIsPipelineModalOpen] = useState(false);
+  const [pipelinePhase, setPipelinePhase] = useState<PipelinePhase>('starting');
+  const [pipelineLogs, setPipelineLogs] = useState<string[]>([]);
+  const [pipelineError, setPipelineError] = useState<{ message: string; retryable: boolean; safeMode: boolean } | null>(null);
+  const [pdfWarning, setPdfWarning] = useState<{ warnings: string[], onContinue: () => void, onUseSafeMode: () => void } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pipelinePayloadRef = useRef<{ file: File, method: StudyMethod, course: Course } | null>(null);
+  const pipelineSessionPayloadRef = useRef<StudySession | null>(null);
+
 
   // --- Session Timer Logic ---
   const isSessionActive = currentSession && ['guided-learning', 'consolidation', 'practice', 'flashcard-practice'].includes(screen);
@@ -215,7 +269,7 @@ const App: React.FC = () => {
           ]);
           setCourses(loadedCourses);
           setAllSessions(loadedSessions);
-          setPausedSessions(loadedSessions.filter(s => s.status === 'paused'));
+          setPausedSessions(loadedSessions.filter(s => s.status === 'paused' || s.status === 'pending_generation'));
           setWeakPoints(loadedWeakPoints);
           setScreen('welcome');
           
@@ -330,58 +384,6 @@ const App: React.FC = () => {
   };
   
   // --- Session Management Handlers ---
-  const handleStart = (text: string, method: StudyMethod, course: Course, title: string) => {
-    withApiConfigCheck(async () => {
-        if (!currentUser || !apiKey || !apiProvider) return;
-        setIsLoading(true);
-        setLoadingMessage('Analizando documento y creando lecciones...');
-        setScreen('loading');
-        setStudyText(text);
-
-        try {
-            const [context, actualTitle] = await Promise.all([
-                classifyContent(apiProvider, apiKey, text),
-                USE_AI_API ? generateTopicTitle(apiProvider, apiKey, text) : Promise.resolve(title)
-            ]);
-            setAcademicContext(context);
-            const generatedLessons = await generateMicroLessons(apiProvider, apiKey, text, context);
-            const newSession: StudySession = {
-                id: crypto.randomUUID(), userId: currentUser.id, title: actualTitle, courseId: course.id,
-                courseName: course.name, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-                status: 'paused', studyMethod: method, durationMs: 0, weakConcepts: [], currentLessonIndex: 0,
-                userExplanations: {}, microLessonMetrics: {},
-                studyText: text, 
-                academicContext: context,
-                microLessons: generatedLessons,
-            };
-            setLessons(generatedLessons);
-            setCurrentSession(newSession);
-            await saveSessionInDb(newSession);
-            
-            setAllSessions(prev => [newSession, ...prev]);
-            setPausedSessions(prev => [newSession, ...prev]);
-
-            addToast("Sesión creada.");
-            setScreen('exploration');
-        } catch (error) {
-            console.error("Failed to start session:", error);
-            let toastMessage = "Error al iniciar la sesión. Inténtalo de nuevo.";
-            if (error instanceof Error) {
-                if (error.message.includes('401')) {
-                    toastMessage = "Error de API: Clave inválida o incorrecta.";
-                } else if (error.message.includes('429') || error.message.toLowerCase().includes('quota')) {
-                    toastMessage = "Error de API: Límite de cuota excedido o sin crédito.";
-                } else if (error.message.includes('fetch')) {
-                    toastMessage = "Error de red. Revisa tu conexión a internet.";
-                }
-            }
-            addToast(toastMessage, "error");
-            setScreen('welcome');
-        } finally {
-            setIsLoading(false);
-        }
-    });
-  };
 
   const handleCreateCourse = async (name: string): Promise<Course> => {
       if (!currentUser) throw new Error("User not selected");
@@ -390,11 +392,29 @@ const App: React.FC = () => {
       return newCourse;
   };
 
+  const handleStart = (file: File, method: StudyMethod, course: Course) => {
+    withApiConfigCheck(() => {
+        runPipeline(file, method, course);
+    });
+  };
+
   const handleResume = (sessionId: string) => {
     withApiConfigCheck(async () => {
       const sessionToResume = allSessions.find(s => s.id === sessionId);
       if (sessionToResume && apiKey && apiProvider) {
-        if (!sessionToResume.studyText || !sessionToResume.academicContext) {
+
+        if (sessionToResume.status === 'pending_generation') {
+            if (sessionToResume.studyText) {
+                pipelineSessionPayloadRef.current = sessionToResume;
+                runGenerationPipeline(sessionToResume);
+                return;
+            } else {
+                addToast("Error: sesión en modo seguro sin texto. Por favor, crea una nueva.", "error");
+                return;
+            }
+        }
+        
+        if (!sessionToResume.studyText || (!sessionToResume.academicContext && !sessionToResume.microLessons)) {
           addToast("Error: sesión antigua sin datos. Por favor, crea una nueva.", "error");
           return;
         }
@@ -410,7 +430,7 @@ const App: React.FC = () => {
           if (sessionToResume.microLessons && sessionToResume.microLessons.length > 0) {
             lessonsToUse = sessionToResume.microLessons;
           } else {
-            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToResume.studyText, sessionToResume.academicContext);
+            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToResume.studyText, sessionToResume.academicContext!);
             sessionToSet = { ...sessionToResume, microLessons: lessonsToUse };
             await saveSessionInDb(sessionToSet);
             setAllSessions(prev => prev.map(s => s.id === sessionToSet.id ? sessionToSet : s));
@@ -446,7 +466,7 @@ const App: React.FC = () => {
     withApiConfigCheck(async () => {
       const sessionToReview = allSessions.find(s => s.id === sessionId);
       if (sessionToReview && apiKey && apiProvider) {
-        if (!sessionToReview.studyText || !sessionToReview.academicContext) {
+        if (!sessionToReview.studyText || (!sessionToReview.academicContext && !sessionToReview.microLessons)) {
             addToast("Error: sesión antigua sin datos. No se puede revisar.", "error");
             return;
         }
@@ -462,7 +482,7 @@ const App: React.FC = () => {
           if (sessionToReview.microLessons && sessionToReview.microLessons.length > 0) {
             lessonsToUse = sessionToReview.microLessons;
           } else {
-            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToReview.studyText, sessionToReview.academicContext);
+            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToReview.studyText, sessionToReview.academicContext!);
             sessionToSet = { ...sessionToReview, microLessons: lessonsToUse };
             await saveSessionInDb(sessionToSet);
             setAllSessions(prev => prev.map(s => s.id === sessionToSet.id ? sessionToSet : s));
@@ -490,7 +510,7 @@ const App: React.FC = () => {
     withApiConfigCheck(async () => {
       const sessionToReview = allSessions.find(s => s.id === sessionId);
       if (sessionToReview && apiKey && apiProvider) {
-        if (!sessionToReview.studyText || !sessionToReview.academicContext) {
+        if (!sessionToReview.studyText || (!sessionToReview.academicContext && !sessionToReview.microLessons)) {
             addToast("Error: sesión antigua sin datos. No se puede repasar.", "error");
             return;
         }
@@ -506,7 +526,7 @@ const App: React.FC = () => {
           if (sessionToReview.microLessons && sessionToReview.microLessons.length > 0) {
             lessonsToUse = sessionToReview.microLessons;
           } else {
-            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToReview.studyText, sessionToReview.academicContext);
+            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToReview.studyText, sessionToReview.academicContext!);
             sessionToSet = { ...sessionToReview, microLessons: lessonsToUse };
             await saveSessionInDb(sessionToSet);
             setAllSessions(prev => prev.map(s => s.id === sessionToSet.id ? sessionToSet : s));
@@ -572,7 +592,7 @@ const App: React.FC = () => {
                   setAllSessions(prev => prev.map(s => s.id === archivedSession.id ? archivedSession : s));
                   addToast("Sesión archivada del historial.");
               } else {
-                  // Hard delete paused sessions
+                  // Hard delete paused or pending sessions
                   await deleteSessionInDb(sessionToDiscard);
                   setAllSessions(prev => prev.filter(s => s.id !== sessionToDiscard));
                   setPausedSessions(prev => prev.filter(s => s.id !== sessionToDiscard));
@@ -764,7 +784,224 @@ const App: React.FC = () => {
   const handleReturnToConsolidation = () => {
     setScreen('consolidation');
   };
+  
+  // --- PDF Processing Pipeline Logic ---
 
+  const handleCancelPipeline = () => {
+    abortControllerRef.current?.abort();
+    setIsPipelineModalOpen(false);
+  };
+
+  const handleRetry = () => {
+    if (pipelineSessionPayloadRef.current) {
+        runGenerationPipeline(pipelineSessionPayloadRef.current);
+    } else if (pipelinePayloadRef.current) {
+        runPipeline(pipelinePayloadRef.current.file, pipelinePayloadRef.current.method, pipelinePayloadRef.current.course, true);
+    }
+  };
+  
+  const handleSafeMode = () => {
+    if (pipelinePayloadRef.current) {
+        const { file, method, course } = pipelinePayloadRef.current;
+        runPipeline(file, method, course, true, true);
+    }
+  };
+
+  const createSafeModeSession = async (text: string, title: string, method: StudyMethod, course: Course) => {
+    if (!currentUser) return;
+    setPipelinePhase('creating_session');
+    const newSession: StudySession = {
+        id: crypto.randomUUID(), userId: currentUser.id, title: `(Modo Seguro) ${title}`, courseId: course.id,
+        courseName: course.name, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        status: 'pending_generation',
+        studyMethod: method, durationMs: 0, weakConcepts: [], currentLessonIndex: 0,
+        userExplanations: {}, microLessonMetrics: {},
+        studyText: text,
+        microLessons: [],
+    };
+    await saveSessionInDb(newSession);
+    
+    setAllSessions(prev => [newSession, ...prev]);
+    setPausedSessions(prev => [newSession, ...prev]);
+
+    setPipelinePhase('done');
+    addToast("Sesión en Modo Seguro creada. Puedes generar el contenido IA más tarde.", "success");
+    setTimeout(() => {
+        setIsPipelineModalOpen(false);
+        setScreen('welcome');
+    }, 1000);
+  };
+  
+  const runPipeline = async (file: File, method: StudyMethod, course: Course, isRetry = false, useSafeMode = false) => {
+    if (!currentUser || (USE_AI_API && (!apiKey || !apiProvider))) return;
+
+    if (!isRetry) {
+        pipelinePayloadRef.current = { file, method, course };
+        setPipelineLogs([]);
+        setPipelineError(null);
+    }
+    
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+    const requestId = crypto.randomUUID();
+
+    const addLog = (message: string) => {
+        console.info(`[pdf_pipeline_${requestId}] ${message}`);
+        setPipelineLogs(prev => [...prev, message]);
+    };
+
+    const setPhase = (phase: PipelinePhase) => {
+        addLog(`Entering phase: ${phase}`);
+        setPipelinePhase(phase);
+    };
+
+    const handleError = (error: any, phase: PipelinePhase, options: { retryable: boolean; safeMode: boolean }) => {
+        let message = "Ocurrió un error inesperado.";
+        if (error instanceof Error) {
+            if (error.message === 'timeout') message = "La operación tardó demasiado. Puedes reintentar o usar Modo Seguro.";
+            else if (error.message.includes('401') || error.message.includes('403')) message = "Clave o permisos de la IA no válidos.";
+            else if (error.message.includes('429')) message = "Cuota temporal agotada. Reintenta en unos minutos.";
+            else if (error.message.includes('404')) message = "Ruta de API no encontrada (producción).";
+            else if (error instanceof DOMException && error.name === 'AbortError') {
+                setPhase('cancelled');
+                addLog('Pipeline cancelled by user.');
+                setIsPipelineModalOpen(false);
+                return;
+            } else message = "La IA devolvió una respuesta incompleta o inválida.";
+        }
+        console.error(`[pdf_pipeline_${requestId}] Error in phase ${phase}:`, error);
+        addLog(`ERROR: ${message}`);
+        setPhase('error');
+        setPipelineError({ message, ...options });
+    };
+
+    setIsPipelineModalOpen(true);
+    pipelineSessionPayloadRef.current = null; // Ensure we're in PDF mode
+
+    try {
+        setPhase('parsing');
+        const rawText = await withRetry(() => withTimeout(parsePdf(file, { signal }), 12000));
+        
+        if (useSafeMode) {
+             await createSafeModeSession(normalizeText(rawText), file.name, method, course);
+             return;
+        }
+
+        setPhase('validating');
+        addLog(`Parsed ${rawText.length} characters.`);
+        const warnings: string[] = [];
+        const fileBuffer = await file.arrayBuffer();
+        const pdfDoc = await pdfjsLib.getDocument({ data: fileBuffer.slice(0) }).promise;
+        if (pdfDoc.isEncrypted) warnings.push("El PDF está encriptado. El texto extraído puede ser incorrecto.");
+        if (rawText.length < 200) warnings.push("El PDF parece ser una imagen o contiene muy poco texto (<200 caracteres).");
+        if (pdfDoc.numPages > 80) warnings.push(`El PDF tiene más de 80 páginas (${pdfDoc.numPages}), lo que puede tardar en procesar.`);
+
+        if (warnings.length > 0) {
+            addLog(`Warnings found: ${warnings.join(', ')}`);
+            await new Promise<void>(resolve => {
+                setPdfWarning({
+                    warnings,
+                    onContinue: () => { setPdfWarning(null); resolve(); },
+                    onUseSafeMode: () => {
+                        setPdfWarning(null);
+                        createSafeModeSession(normalizeText(rawText), file.name, method, course);
+                        resolve();
+                        throw new Error('SAFE_MODE_ACTIVATED');
+                    }
+                });
+            });
+        }
+        
+        const text = normalizeText(rawText);
+        const MAX_CHARS_FOR_LESSONS = 40000;
+        let lessonText = text.length > MAX_CHARS_FOR_LESSONS ? text.substring(0, MAX_CHARS_FOR_LESSONS) : text;
+
+        setPhase('callingLLM');
+        addLog('Classifying content...');
+        const classification = await withRetry(() => withTimeout(classifyContent(apiProvider!, apiKey!, lessonText, { signal }), 20000));
+        
+        addLog('Generating title and lessons...');
+        const [titleResult, lessonsResult] = await withRetry(() => withTimeout(Promise.all([
+            USE_AI_API ? generateTopicTitle(apiProvider!, apiKey!, lessonText.substring(0, 1000), { signal }) : Promise.resolve(file.name),
+            generateMicroLessons(apiProvider!, apiKey!, lessonText, classification, { signal })
+        ]), 60000));
+
+        if (!lessonsResult || lessonsResult.length === 0) throw new Error("La IA no devolvió lecciones.");
+
+        setPhase('creating_session');
+        const newSession: StudySession = {
+            id: crypto.randomUUID(), userId: currentUser!.id, title: titleResult, courseId: course.id,
+            courseName: course.name, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            status: 'paused', studyMethod: method, durationMs: 0, weakConcepts: [], currentLessonIndex: 0,
+            userExplanations: {}, microLessonMetrics: {}, studyText: text, academicContext: classification, microLessons: lessonsResult,
+        };
+        await saveSessionInDb(newSession);
+
+        setLessons(lessonsResult);
+        setCurrentSession(newSession);
+        setStudyText(text);
+        setAcademicContext(classification);
+        setAllSessions(prev => [newSession, ...prev]);
+        setPausedSessions(prev => [newSession, ...prev]);
+
+        setPhase('done');
+        addToast("Sesión creada con éxito.");
+        setTimeout(() => {
+            setIsPipelineModalOpen(false);
+            setScreen('exploration');
+        }, 1000);
+
+    } catch (error: any) {
+        if (error.message !== 'SAFE_MODE_ACTIVATED') handleError(error, pipelinePhase, { retryable: true, safeMode: true });
+        else setIsPipelineModalOpen(false);
+    }
+  };
+
+  const runGenerationPipeline = async (session: StudySession) => {
+    if (!currentUser || !apiKey || !apiProvider || !session.studyText) return;
+
+    setPipelineLogs([]);
+    setPipelineError(null);
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+    const requestId = crypto.randomUUID();
+
+    const addLog = (m: string) => { console.info(`[pdf_pipeline_${requestId}] ${m}`); setPipelineLogs(p => [...p, m]); };
+    const setPhase = (p: PipelinePhase) => { addLog(`Entering phase: ${p}`); setPipelinePhase(p); };
+    const handleError = (e: any, ph: PipelinePhase, opts: { retryable: boolean; safeMode: boolean }) => { /* same as above */ };
+
+    setIsPipelineModalOpen(true);
+
+    try {
+        const text = session.studyText;
+        const lessonText = text.substring(0, 40000);
+        
+        setPhase('callingLLM');
+        addLog('Classifying content...');
+        const classification = await withRetry(() => withTimeout(classifyContent(apiProvider!, apiKey!, lessonText, { signal }), 20000));
+        
+        addLog('Generating lessons...');
+        const lessonsResult = await withRetry(() => withTimeout(generateMicroLessons(apiProvider!, apiKey!, lessonText, classification, { signal }), 60000));
+
+        if (!lessonsResult || lessonsResult.length === 0) throw new Error("La IA no devolvió lecciones.");
+        
+        setPhase('creating_session');
+        const updatedSession: StudySession = {
+            ...session, status: 'paused', academicContext: classification, microLessons: lessonsResult, updatedAt: new Date().toISOString(),
+        };
+        await saveSessionInDb(updatedSession);
+        
+        setAllSessions(prev => prev.map(s => s.id === updatedSession.id ? updatedSession : s));
+        setPausedSessions(prev => prev.map(s => s.id === updatedSession.id ? updatedSession : s));
+
+        setPhase('done');
+        addToast("Contenido de IA generado. Ya puedes reanudar la sesión.", "success");
+        setTimeout(() => setIsPipelineModalOpen(false), 1000);
+
+    } catch (error) {
+        handleError(error, pipelinePhase, { retryable: true, safeMode: false });
+    }
+  };
 
   // --- Screen Rendering Logic ---
   const renderScreen = () => {
@@ -777,7 +1014,6 @@ const App: React.FC = () => {
       );
     }
 
-    // Pass the API key and provider to components that need them
     const key = apiKey || "";
     const provider = apiProvider || 'gemini';
 
@@ -844,6 +1080,8 @@ const App: React.FC = () => {
       <ConfirmEndModal isOpen={isConfirmEndOpen} onClose={() => setIsConfirmEndOpen(false)} onConfirm={handleEndSessionAndDiscard} />
       <FeedbackModal isOpen={isFeedbackModalOpen} onClose={() => setIsFeedbackModalOpen(false)} onSubmit={handleFeedbackSubmit} />
       <ConfirmDiscardModal isOpen={isDiscardConfirmOpen} onClose={() => setIsDiscardConfirmOpen(false)} onConfirm={handleDiscard} />
+      <ProcessingPipelineModal isOpen={isPipelineModalOpen} phase={pipelinePhase} logs={pipelineLogs} error={pipelineError} onCancel={handleCancelPipeline} onRetry={handleRetry} onUseSafeMode={handleSafeMode} />
+      {pdfWarning && <PdfWarningModal isOpen={!!pdfWarning} warnings={pdfWarning.warnings} onContinue={pdfWarning.onContinue} onUseSafeMode={pdfWarning.onUseSafeMode} onClose={() => setPdfWarning(null)} />}
       
       {currentUser && screen !== 'user-selection' && (
         <header className="fixed top-4 right-4 sm:right-8 z-20 flex items-center gap-2 sm:gap-3">

@@ -134,7 +134,7 @@ export interface StudySession {
   courseName: string;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
-  status: 'paused' | 'completed' | 'archived';
+  status: 'paused' | 'completed' | 'archived' | 'pending_generation';
   studyMethod: StudyMethod;
   durationMs: number;
   weakConcepts: string[];
@@ -203,3 +203,5 @@ export interface WeakPoint {
   status: 'active' | 'mastered';
   strength: number; // A score from 0 (very weak) to 1 (mastered)
 }
+
+export type PipelinePhase = 'starting' | 'parsing' | 'validating' | 'chunking' | 'callingLLM' | 'creating_session' | 'done' | 'error' | 'cancelled';
