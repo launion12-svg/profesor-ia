@@ -897,8 +897,7 @@ const App: React.FC = () => {
         ), [500, 1500]);
 
         const handleProgress = (progress: GenerationProgress) => setPipelineProgress({ done: progress.done, total: progress.total });
-        // FIX: Added the missing `requestId` property to the options object for `generateMicroLessons`.
-        const lessonsPromise = generateMicroLessons(apiProvider!, apiKey!, text, classification, { signal, onProgress: handleProgress, requestId });
+        const lessonsPromise = generateMicroLessons(apiProvider!, apiKey!, text, classification, { signal, onProgress: handleProgress, requestId, chunkIndexesToProcess: undefined });
         const [titleResult, { lessons: lessonsResult }] = await Promise.all([ titlePromise, lessonsPromise ]);
 
         if (lessonsResult.length === 0) throw new Error("La IA no devolvió ninguna lección válida.");
@@ -983,10 +982,9 @@ const App: React.FC = () => {
         addLog('Generating lessons...');
         const handleProgress = (progress: GenerationProgress) => setPipelineProgress({ done: progress.done, total: progress.total });
         
-        // FIX: Added the missing `requestId` property to the options object for `generateMicroLessons`.
         const { lessons: newLessons } = await generateMicroLessons(
             apiProvider!, apiKey!, text, sessionRef.academicContext!, 
-            { signal, onProgress: handleProgress, requestId }
+            { signal, onProgress: handleProgress, requestId, chunkIndexesToProcess: session.pendingChunkData?.indexes }
         );
 
         if (newLessons.length === 0) throw new Error("La IA no devolvió lecciones válidas.");

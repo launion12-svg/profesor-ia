@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import type { 
     AcademicContext, 
@@ -135,7 +136,7 @@ export const generateMicroLessons = async (
     apiKey: string, 
     text: string, 
     context: AcademicContext, 
-    options: { signal?: AbortSignal; onProgress?: (progress: GenerationProgress) => void; }
+    options: { signal?: AbortSignal; onProgress?: (progress: GenerationProgress) => void; requestId: string; }
 ): Promise<{ lessons: MicroLesson[]; failedChunkIndexes: number[] }> => {
 
     const prompt = `Basado en el siguiente texto de categoría "${context.category}", crea entre 5 y 7 micro-lecciones. El resultado final DEBE ser un único objeto JSON que contenga una clave "lessons". El valor de "lessons" debe ser un array con todas las micro-lecciones generadas.
@@ -185,7 +186,7 @@ ${text}
         required: ['lessons'] 
     };
     
-    options.onProgress?.({ done: 0, total: 1, chunkIndex: 0, status: 'success' });
+    options.onProgress?.({ done: 0, total: 1, chunkIndex: 0, status: 'success', result: [] });
 
     const result = await withRetry(() => 
         withTimeout(
@@ -204,7 +205,7 @@ ${text}
         throw new Error("La IA no devolvió lecciones válidas en su respuesta.");
     }
     
-    options.onProgress?.({ done: 1, total: 1, chunkIndex: 0, status: 'success' });
+    options.onProgress?.({ done: 1, total: 1, chunkIndex: 0, status: 'success', result: result.lessons });
 
     return { lessons: result.lessons, failedChunkIndexes: [] };
 };
