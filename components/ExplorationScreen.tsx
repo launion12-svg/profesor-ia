@@ -4,6 +4,9 @@ import { generateExplorationData } from '../services/aiService';
 import BookOpenIcon from './icons/BookOpenIcon';
 import LightBulbIcon from './icons/LightBulbIcon';
 import MindMapIcon from './icons/MindMapIcon';
+import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
+import SpeakerIcon from './icons/SpeakerIcon';
+import PauseIcon from './icons/PauseIcon';
 
 interface ExplorationScreenProps {
   apiProvider: ApiProvider;
@@ -17,6 +20,8 @@ const ExplorationScreen: React.FC<ExplorationScreenProps> = ({ apiProvider, apiK
   const [data, setData] = useState<ExplorationData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { isSpeaking, isPaused, speak, pause, resume, cancel } = useSpeechSynthesis();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -33,7 +38,23 @@ const ExplorationScreen: React.FC<ExplorationScreenProps> = ({ apiProvider, apiK
       }
     };
     fetchData();
-  }, [apiProvider, apiKey, studyText]);
+
+    return () => {
+      cancel();
+    }
+  }, [apiProvider, apiKey, studyText, cancel]);
+
+  const handleToggleSummarySpeech = () => {
+    if (!data?.simpleSummary) return;
+
+    if (!isSpeaking) {
+        speak(data.simpleSummary);
+    } else if (isPaused) {
+        resume();
+    } else {
+        pause();
+    }
+  };
 
   if (isLoading) {
     return (
@@ -69,7 +90,12 @@ const ExplorationScreen: React.FC<ExplorationScreenProps> = ({ apiProvider, apiK
 
       <div className="space-y-8">
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6">
-          <h3 className="text-xl font-bold mb-3 text-indigo-300 flex items-center"><BookOpenIcon /> <span className="ml-2">Resumen Sencillo</span></h3>
+          <div className="flex justify-between items-start gap-4 mb-3">
+            <h3 className="text-xl font-bold text-indigo-300 flex items-center"><BookOpenIcon /> <span className="ml-2">Resumen Sencillo</span></h3>
+            <button onClick={handleToggleSummarySpeech} className="flex-shrink-0 w-10 h-10 bg-gray-700/50 hover:bg-gray-600 rounded-full flex items-center justify-center" aria-label={isSpeaking && !isPaused ? 'Pausar lectura' : 'Leer resumen'}>
+              {isSpeaking && !isPaused ? <PauseIcon /> : <SpeakerIcon />}
+            </button>
+          </div>
           <p className="text-gray-300 leading-relaxed">{data.simpleSummary}</p>
         </div>
 
