@@ -774,6 +774,7 @@ const App: React.FC = () => {
         studyMethod: method, durationMs: 0, weakConcepts: [], currentLessonIndex: 0,
         userExplanations: {}, microLessonMetrics: {},
         studyText: text,
+        sourceFileName: title,
         microLessons: [],
     };
     await saveSessionInDb(newSession);
@@ -907,7 +908,8 @@ const App: React.FC = () => {
             id: crypto.randomUUID(), userId: currentUser!.id, title: titleResult, courseId: course.id,
             courseName: course.name, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
             status: 'paused', studyMethod: method, durationMs: 0, weakConcepts: [], currentLessonIndex: 0,
-            userExplanations: {}, microLessonMetrics: {}, studyText: text, academicContext: classification, microLessons: lessonsResult
+            userExplanations: {}, microLessonMetrics: {}, studyText: text, academicContext: classification, microLessons: lessonsResult,
+            sourceFileName: file.name
         };
 
         await saveSessionInDb(newSession);

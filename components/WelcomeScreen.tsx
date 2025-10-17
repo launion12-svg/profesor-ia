@@ -238,7 +238,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
               <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
                 <div className="flex-grow text-left">
                   <p className="font-semibold text-gray-200">{session.title}</p>
-                  <p className="text-sm text-amber-400">Generación parcial. Faltan {session.pendingChunkData?.indexes.length} fragmentos por procesar.</p>
+                  {session.sourceFileName && <p className="text-xs text-gray-500 italic -mt-1">{session.sourceFileName}</p>}
+                  <p className="text-sm text-amber-400 mt-1">Generación parcial. Faltan {session.pendingChunkData?.indexes.length} fragmentos por procesar.</p>
                 </div>
                 <div className="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
                    <button onClick={() => onDiscard(session.id)} className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full" title="Descartar sesión"><TrashIcon /></button>
@@ -273,7 +274,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
               <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
                 <div className="flex-grow text-left">
                   <p className="font-semibold text-gray-200">{session.title}</p>
-                  <p className="text-sm text-gray-500">{session.courseName} &middot; Última vez: {formatRelativeTime(session.updatedAt)}</p>
+                  <p className="text-sm text-gray-500">{session.courseName}{session.sourceFileName && <span className="italic"> &middot; {session.sourceFileName}</span>}</p>
+                  <p className="text-xs text-gray-400 mt-1">Última vez: {formatRelativeTime(session.updatedAt)}</p>
                    <p className="text-sm text-gray-400 mt-1 flex items-center gap-1">
                     <ClockIcon /> Tiempo estudiado: <strong className="font-semibold text-gray-200">{formatStudyTime(session.durationMs)}</strong>
                    </p>
@@ -299,13 +301,13 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
               <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
                 <div className="flex-grow text-left">
                   <p className="font-semibold text-gray-200">{session.title}</p>
-                   <p className="text-sm text-gray-500">
-                    {session.courseName} &middot;{' '}
+                   <p className="text-sm text-gray-500">{session.courseName}{session.sourceFileName && <span className="italic"> &middot; {session.sourceFileName}</span>}</p>
+                   <p className="text-xs text-gray-400 mt-1">
                     {session.practiceMetrics 
                         ? <span className="font-semibold text-blue-400">Completado (Con práctica guiada)</span> 
                         : <span className="font-semibold text-green-400">Completado (Teoría)</span>
                     }
-                    {' '}{formatRelativeTime(session.updatedAt)}
+                    {' '}&middot; {formatRelativeTime(session.updatedAt)}
                   </p>
                   {session.practiceMetrics && (
                     <p className="text-sm text-gray-400 mt-1 flex items-center gap-1">

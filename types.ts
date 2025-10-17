@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 export type StudyMethod = 'pomodoro' | 'long';
@@ -139,6 +138,7 @@ export interface StudySession {
   studyMethod: StudyMethod;
   durationMs: number;
   weakConcepts: string[];
+  sourceFileName?: string;
   
   studyText?: string;
   academicContext?: AcademicContext;

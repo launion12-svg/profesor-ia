@@ -87,6 +87,16 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onSave, onCl
                     Consigue tu clave de {provider === 'gemini' ? 'Google Gemini' : 'OpenAI'} aquí →
                 </a>
               </div>
+               <div className="text-center mt-4">
+                <a 
+                    href="/crear_API_KEY/crear_API.pdf" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-indigo-400 hover:text-indigo-300 hover:underline"
+                >
+                    ¿No sabes cómo crear una clave? Ver manual aquí →
+                </a>
+              </div>
             </div>
         </div>
 
