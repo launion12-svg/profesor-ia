@@ -14,7 +14,9 @@ export async function withRetry<T>(fn: () => Promise<T>, delays = [800, 2000, 40
       return await fn();
     } catch (err) {
       lastError = err;
-      await new Promise(r => setTimeout(r, delay));
+      // Add jitter: +/- 20% of the delay
+      const jitter = delay * 0.4 * (Math.random() - 0.5);
+      await new Promise(r => setTimeout(r, delay + jitter));
     }
   }
   throw lastError;

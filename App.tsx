@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import WelcomeScreen from './components/WelcomeScreen';
 import ExplorationScreen from './components/ExplorationScreen';
@@ -31,7 +32,7 @@ import BugReportModal from './components/BugReportModal';
 import ProcessingPipelineModal from './components/ProcessingPipelineModal';
 import PdfWarningModal from './components/PdfWarningModal';
 
-import type { User, StudySession, StudyMethod, Course, PerceivedDifficulty, ToastMessage, ReviewSubject, MicroLesson, AcademicContext, WeakPoint, PracticeMetrics, ApiProvider, PipelinePhase } from './types';
+import type { User, StudySession, StudyMethod, Course, PerceivedDifficulty, ToastMessage, ReviewSubject, MicroLesson, AcademicContext, WeakPoint, PracticeMetrics, ApiProvider, PipelinePhase, GenerationProgress } from './types';
 import { loadUsers, saveUser, deleteUser, loadUserCourses, createCourse as createCourseInDb, loadSessions, saveSession as saveSessionInDb, deleteSession as deleteSessionInDb, loadWeakPoints, saveWeakPoint, getWeakPoint, ensureSchemaSafety, migrateSessionsMapSourceText } from './services/dbService';
 import { classifyContent, generateMicroLessons, generateTopicTitle } from './services/aiService';
 import { USE_AI_API } from './config';
@@ -129,11 +130,13 @@ const App: React.FC = () => {
   const [isPipelineModalOpen, setIsPipelineModalOpen] = useState(false);
   const [pipelinePhase, setPipelinePhase] = useState<PipelinePhase>('starting');
   const [pipelineLogs, setPipelineLogs] = useState<string[]>([]);
+  const [pipelineProgress, setPipelineProgress] = useState<{ done: number; total: number } | null>(null);
   const [pipelineError, setPipelineError] = useState<{ message: string; retryable: boolean; safeMode: boolean } | null>(null);
   const [pdfWarning, setPdfWarning] = useState<{ warnings: string[], onContinue: () => void, onUseSafeMode: () => void } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const pipelinePayloadRef = useRef<{ file: File, method: StudyMethod, course: Course } | null>(null);
   const pipelineSessionPayloadRef = useRef<StudySession | null>(null);
+  const pipelineRawTextRef = useRef<string>('');
 
 
   // --- Session Timer Logic ---
@@ -404,17 +407,12 @@ const App: React.FC = () => {
       if (sessionToResume && apiKey && apiProvider) {
 
         if (sessionToResume.status === 'pending_generation') {
-            if (sessionToResume.studyText) {
-                pipelineSessionPayloadRef.current = sessionToResume;
-                runGenerationPipeline(sessionToResume);
-                return;
-            } else {
-                addToast("Error: sesión en modo seguro sin texto. Por favor, crea una nueva.", "error");
-                return;
-            }
+            pipelineSessionPayloadRef.current = sessionToResume;
+            runGenerationPipeline(sessionToResume);
+            return;
         }
         
-        if (!sessionToResume.studyText || (!sessionToResume.academicContext && !sessionToResume.microLessons)) {
+        if (!sessionToResume.studyText || !sessionToResume.microLessons || sessionToResume.microLessons.length === 0) {
           addToast("Error: sesión antigua sin datos. Por favor, crea una nueva.", "error");
           return;
         }
@@ -424,23 +422,10 @@ const App: React.FC = () => {
         setScreen('loading');
 
         try {
-          let lessonsToUse: MicroLesson[];
-          let sessionToSet = sessionToResume;
-
-          if (sessionToResume.microLessons && sessionToResume.microLessons.length > 0) {
-            lessonsToUse = sessionToResume.microLessons;
-          } else {
-            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToResume.studyText, sessionToResume.academicContext!);
-            sessionToSet = { ...sessionToResume, microLessons: lessonsToUse };
-            await saveSessionInDb(sessionToSet);
-            setAllSessions(prev => prev.map(s => s.id === sessionToSet.id ? sessionToSet : s));
-            setPausedSessions(prev => prev.map(s => s.id === sessionToSet.id ? sessionToSet : s));
-          }
-
-          setLessons(lessonsToUse);
+          setLessons(sessionToResume.microLessons);
           setStudyText(sessionToResume.studyText);
           setAcademicContext(sessionToResume.academicContext);
-          setCurrentSession(sessionToSet);
+          setCurrentSession(sessionToResume);
 
           let finalScreen: AppScreen = 'guided-learning';
           const { lastScreen } = sessionToResume;
@@ -466,7 +451,7 @@ const App: React.FC = () => {
     withApiConfigCheck(async () => {
       const sessionToReview = allSessions.find(s => s.id === sessionId);
       if (sessionToReview && apiKey && apiProvider) {
-        if (!sessionToReview.studyText || (!sessionToReview.academicContext && !sessionToReview.microLessons)) {
+        if (!sessionToReview.studyText || !sessionToReview.microLessons || sessionToReview.microLessons.length === 0) {
             addToast("Error: sesión antigua sin datos. No se puede revisar.", "error");
             return;
         }
@@ -476,25 +461,11 @@ const App: React.FC = () => {
         setScreen('loading');
 
         try {
-          let lessonsToUse: MicroLesson[];
-          let sessionToSet = sessionToReview;
-
-          if (sessionToReview.microLessons && sessionToReview.microLessons.length > 0) {
-            lessonsToUse = sessionToReview.microLessons;
-          } else {
-            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToReview.studyText, sessionToReview.academicContext!);
-            sessionToSet = { ...sessionToReview, microLessons: lessonsToUse };
-            await saveSessionInDb(sessionToSet);
-            setAllSessions(prev => prev.map(s => s.id === sessionToSet.id ? sessionToSet : s));
-          }
-
-          setLessons(lessonsToUse);
+          setLessons(sessionToReview.microLessons);
           setStudyText(sessionToReview.studyText);
           setAcademicContext(sessionToReview.academicContext);
-          setCurrentSession(sessionToSet);
-          
+          setCurrentSession(sessionToReview);
           setScreen('dashboard');
-
         } catch (error) {
           console.error("Failed to review session:", error);
           addToast("Error al cargar el resumen de la sesión.", "error");
@@ -510,7 +481,7 @@ const App: React.FC = () => {
     withApiConfigCheck(async () => {
       const sessionToReview = allSessions.find(s => s.id === sessionId);
       if (sessionToReview && apiKey && apiProvider) {
-        if (!sessionToReview.studyText || (!sessionToReview.academicContext && !sessionToReview.microLessons)) {
+        if (!sessionToReview.studyText || !sessionToReview.microLessons || sessionToReview.microLessons.length === 0) {
             addToast("Error: sesión antigua sin datos. No se puede repasar.", "error");
             return;
         }
@@ -520,25 +491,11 @@ const App: React.FC = () => {
         setScreen('loading');
 
         try {
-          let lessonsToUse: MicroLesson[];
-          let sessionToSet = sessionToReview;
-
-          if (sessionToReview.microLessons && sessionToReview.microLessons.length > 0) {
-            lessonsToUse = sessionToReview.microLessons;
-          } else {
-            lessonsToUse = await generateMicroLessons(apiProvider, apiKey, sessionToReview.studyText, sessionToReview.academicContext!);
-            sessionToSet = { ...sessionToReview, microLessons: lessonsToUse };
-            await saveSessionInDb(sessionToSet);
-            setAllSessions(prev => prev.map(s => s.id === sessionToSet.id ? sessionToSet : s));
-          }
-          
-          setLessons(lessonsToUse);
+          setLessons(sessionToReview.microLessons);
           setStudyText(sessionToReview.studyText);
           setAcademicContext(sessionToReview.academicContext);
-          setCurrentSession(sessionToSet);
-          
+          setCurrentSession(sessionToReview);
           setScreen('guided-learning');
-
         } catch (error) {
           console.error("Failed to start topic review:", error);
           addToast("Error al cargar el tema para el repaso.", "error");
@@ -839,6 +796,8 @@ const App: React.FC = () => {
         pipelinePayloadRef.current = { file, method, course };
         setPipelineLogs([]);
         setPipelineError(null);
+        setPipelineProgress(null);
+        pipelineRawTextRef.current = '';
     }
     
     abortControllerRef.current = new AbortController();
@@ -877,10 +836,18 @@ const App: React.FC = () => {
 
     setIsPipelineModalOpen(true);
     pipelineSessionPayloadRef.current = null; // Ensure we're in PDF mode
+    
+    let rawText = '';
 
     try {
-        setPhase('parsing');
-        const rawText = await withRetry(() => withTimeout(parsePdf(file, { signal }), 12000));
+        if (pipelineRawTextRef.current && isRetry) {
+            addLog('Reutilizando texto parseado de intento anterior.');
+            rawText = pipelineRawTextRef.current;
+        } else {
+            setPhase('parsing');
+            rawText = await withRetry(() => withTimeout(parsePdf(file, { signal }), 12000), [500, 1500]);
+            pipelineRawTextRef.current = rawText; // Save for potential retries
+        }
         
         if (useSafeMode) {
              await createSafeModeSession(normalizeText(rawText), file.name, method, course);
@@ -890,11 +857,15 @@ const App: React.FC = () => {
         setPhase('validating');
         addLog(`Parsed ${rawText.length} characters.`);
         const warnings: string[] = [];
-        const fileBuffer = await file.arrayBuffer();
-        const pdfDoc = await pdfjsLib.getDocument({ data: fileBuffer.slice(0) }).promise;
-        if (pdfDoc.isEncrypted) warnings.push("El PDF está encriptado. El texto extraído puede ser incorrecto.");
         if (rawText.length < 200) warnings.push("El PDF parece ser una imagen o contiene muy poco texto (<200 caracteres).");
-        if (pdfDoc.numPages > 80) warnings.push(`El PDF tiene más de 80 páginas (${pdfDoc.numPages}), lo que puede tardar en procesar.`);
+        try {
+            const fileBuffer = await file.arrayBuffer();
+            const pdfDoc = await pdfjsLib.getDocument({ data: fileBuffer.slice(0) }).promise;
+            if (pdfDoc.isEncrypted) warnings.push("El PDF está encriptado. El texto extraído puede ser incorrecto.");
+            if (pdfDoc.numPages > 80) warnings.push(`El PDF tiene más de 80 páginas (${pdfDoc.numPages}), lo que puede tardar en procesar.`);
+        } catch (pdfError) {
+            addLog(`Could not quickly validate PDF metadata: ${pdfError}`);
+        }
 
         if (warnings.length > 0) {
             addLog(`Warnings found: ${warnings.join(', ')}`);
@@ -913,28 +884,33 @@ const App: React.FC = () => {
         }
         
         const text = normalizeText(rawText);
-        const MAX_CHARS_FOR_LESSONS = 40000;
-        let lessonText = text.length > MAX_CHARS_FOR_LESSONS ? text.substring(0, MAX_CHARS_FOR_LESSONS) : text;
-
-        setPhase('callingLLM');
-        addLog('Classifying content...');
-        const classification = await withRetry(() => withTimeout(classifyContent(apiProvider!, apiKey!, lessonText, { signal }), 20000));
         
-        addLog('Generating title and lessons...');
-        const [titleResult, lessonsResult] = await withRetry(() => withTimeout(Promise.all([
-            USE_AI_API ? generateTopicTitle(apiProvider!, apiKey!, lessonText.substring(0, 1000), { signal }) : Promise.resolve(file.name),
-            generateMicroLessons(apiProvider!, apiKey!, lessonText, classification, { signal })
-        ]), 60000));
+        setPhase('callingLLM');
+        setPipelineProgress(null);
+        addLog('Classifying content...');
+        const classification = await withRetry(() => withTimeout(classifyContent(apiProvider!, apiKey!, text, { signal }), 30000), [500, 1500]);
+        
+        addLog('Generating title...');
+        const titlePromise = withRetry(() => withTimeout(
+            USE_AI_API ? generateTopicTitle(apiProvider!, apiKey!, text.substring(0, 1000), { signal }) : Promise.resolve(file.name),
+            30000
+        ), [500, 1500]);
 
-        if (!lessonsResult || lessonsResult.length === 0) throw new Error("La IA no devolvió lecciones.");
+        const handleProgress = (progress: GenerationProgress) => setPipelineProgress({ done: progress.done, total: progress.total });
+        // FIX: Added the missing `requestId` property to the options object for `generateMicroLessons`.
+        const lessonsPromise = generateMicroLessons(apiProvider!, apiKey!, text, classification, { signal, onProgress: handleProgress, requestId });
+        const [titleResult, { lessons: lessonsResult }] = await Promise.all([ titlePromise, lessonsPromise ]);
+
+        if (lessonsResult.length === 0) throw new Error("La IA no devolvió ninguna lección válida.");
 
         setPhase('creating_session');
         const newSession: StudySession = {
             id: crypto.randomUUID(), userId: currentUser!.id, title: titleResult, courseId: course.id,
             courseName: course.name, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
             status: 'paused', studyMethod: method, durationMs: 0, weakConcepts: [], currentLessonIndex: 0,
-            userExplanations: {}, microLessonMetrics: {}, studyText: text, academicContext: classification, microLessons: lessonsResult,
+            userExplanations: {}, microLessonMetrics: {}, studyText: text, academicContext: classification, microLessons: lessonsResult
         };
+
         await saveSessionInDb(newSession);
 
         setLessons(lessonsResult);
@@ -946,49 +922,85 @@ const App: React.FC = () => {
 
         setPhase('done');
         addToast("Sesión creada con éxito.");
-        setTimeout(() => {
-            setIsPipelineModalOpen(false);
-            setScreen('exploration');
-        }, 1000);
+        setTimeout(() => { setIsPipelineModalOpen(false); setScreen('exploration'); }, 1000);
 
     } catch (error: any) {
-        if (error.message !== 'SAFE_MODE_ACTIVATED') handleError(error, pipelinePhase, { retryable: true, safeMode: true });
-        else setIsPipelineModalOpen(false);
+        if (error.message === 'SAFE_MODE_ACTIVATED' || (error instanceof DOMException && error.name === 'AbortError')) {
+            setIsPipelineModalOpen(false); return;
+        }
+        
+        const isCriticalLLMFailure = pipelinePhase === 'callingLLM';
+
+        if (isCriticalLLMFailure && rawText && pipelinePayloadRef.current) {
+            console.error(`[pdf_pipeline] Critical failure in LLM phase. Forcing Safe Mode.`, error);
+            addLog(`ERROR: Fallo crítico de la IA. Creando sesión en Modo Seguro.`);
+            setPhase('error');
+            const { file: errorFile, method: errorMethod, course: errorCourse } = pipelinePayloadRef.current;
+            await createSafeModeSession(normalizeText(rawText), errorFile.name, errorMethod, errorCourse);
+            return;
+        }
+
+        handleError(error, pipelinePhase, { retryable: true, safeMode: !!rawText });
     }
   };
 
   const runGenerationPipeline = async (session: StudySession) => {
     if (!currentUser || !apiKey || !apiProvider || !session.studyText) return;
 
+    pipelineSessionPayloadRef.current = session;
     setPipelineLogs([]);
     setPipelineError(null);
+    setPipelineProgress(null);
     abortControllerRef.current = new AbortController();
     const { signal } = abortControllerRef.current;
     const requestId = crypto.randomUUID();
 
-    const addLog = (m: string) => { console.info(`[pdf_pipeline_${requestId}] ${m}`); setPipelineLogs(p => [...p, m]); };
+    const addLog = (m: string) => { console.info(`[generation_pipeline] ${m}`); setPipelineLogs(p => [...p, m]); };
     const setPhase = (p: PipelinePhase) => { addLog(`Entering phase: ${p}`); setPipelinePhase(p); };
-    const handleError = (e: any, ph: PipelinePhase, opts: { retryable: boolean; safeMode: boolean }) => { /* same as above */ };
+    const handleError = (e: any, ph: PipelinePhase, opts: { retryable: boolean; safeMode: boolean }) => {
+        let message = "Error inesperado.";
+        if (e instanceof Error) message = e.message;
+        console.error(`[generation_pipeline] Error in phase ${ph}:`, e);
+        addLog(`ERROR: ${message}`);
+        setPhase('error');
+        setPipelineError({ message, ...opts });
+    };
 
     setIsPipelineModalOpen(true);
+    let sessionRef = { ...session };
 
     try {
-        const text = session.studyText;
-        const lessonText = text.substring(0, 40000);
+        const text = sessionRef.studyText!;
+        addLog('Generando contenido desde cero...');
         
         setPhase('callingLLM');
-        addLog('Classifying content...');
-        const classification = await withRetry(() => withTimeout(classifyContent(apiProvider!, apiKey!, lessonText, { signal }), 20000));
+        if (!sessionRef.academicContext) {
+            addLog('Classifying content...');
+            const classification = await withRetry(() => withTimeout(classifyContent(apiProvider!, apiKey!, text, { signal }), 20000));
+            sessionRef.academicContext = classification;
+        }
         
         addLog('Generating lessons...');
-        const lessonsResult = await withRetry(() => withTimeout(generateMicroLessons(apiProvider!, apiKey!, lessonText, classification, { signal }), 60000));
+        const handleProgress = (progress: GenerationProgress) => setPipelineProgress({ done: progress.done, total: progress.total });
+        
+        // FIX: Added the missing `requestId` property to the options object for `generateMicroLessons`.
+        const { lessons: newLessons } = await generateMicroLessons(
+            apiProvider!, apiKey!, text, sessionRef.academicContext!, 
+            { signal, onProgress: handleProgress, requestId }
+        );
 
-        if (!lessonsResult || lessonsResult.length === 0) throw new Error("La IA no devolvió lecciones.");
+        if (newLessons.length === 0) throw new Error("La IA no devolvió lecciones válidas.");
         
         setPhase('creating_session');
         const updatedSession: StudySession = {
-            ...session, status: 'paused', academicContext: classification, microLessons: lessonsResult, updatedAt: new Date().toISOString(),
+            ...sessionRef, 
+            status: 'paused', 
+            microLessons: newLessons,
+            pendingChunkData: undefined, // Generation is now complete
+            title: sessionRef.title.replace('(Parcial) ', '').replace('(Modo Seguro) ', ''),
+            updatedAt: new Date().toISOString(),
         };
+        
         await saveSessionInDb(updatedSession);
         
         setAllSessions(prev => prev.map(s => s.id === updatedSession.id ? updatedSession : s));
@@ -996,7 +1008,7 @@ const App: React.FC = () => {
 
         setPhase('done');
         addToast("Contenido de IA generado. Ya puedes reanudar la sesión.", "success");
-        setTimeout(() => setIsPipelineModalOpen(false), 1000);
+        setTimeout(() => setIsPipelineModalOpen(false), 1500);
 
     } catch (error) {
         handleError(error, pipelinePhase, { retryable: true, safeMode: false });
@@ -1080,7 +1092,7 @@ const App: React.FC = () => {
       <ConfirmEndModal isOpen={isConfirmEndOpen} onClose={() => setIsConfirmEndOpen(false)} onConfirm={handleEndSessionAndDiscard} />
       <FeedbackModal isOpen={isFeedbackModalOpen} onClose={() => setIsFeedbackModalOpen(false)} onSubmit={handleFeedbackSubmit} />
       <ConfirmDiscardModal isOpen={isDiscardConfirmOpen} onClose={() => setIsDiscardConfirmOpen(false)} onConfirm={handleDiscard} />
-      <ProcessingPipelineModal isOpen={isPipelineModalOpen} phase={pipelinePhase} logs={pipelineLogs} error={pipelineError} onCancel={handleCancelPipeline} onRetry={handleRetry} onUseSafeMode={handleSafeMode} />
+      <ProcessingPipelineModal isOpen={isPipelineModalOpen} phase={pipelinePhase} logs={pipelineLogs} error={pipelineError} onCancel={handleCancelPipeline} onRetry={handleRetry} onUseSafeMode={handleSafeMode} progressDetails={pipelineProgress} />
       {pdfWarning && <PdfWarningModal isOpen={!!pdfWarning} warnings={pdfWarning.warnings} onContinue={pdfWarning.onContinue} onUseSafeMode={pdfWarning.onUseSafeMode} onClose={() => setPdfWarning(null)} />}
       
       {currentUser && screen !== 'user-selection' && (

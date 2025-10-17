@@ -1,3 +1,4 @@
+
 import * as gemini from './geminiService';
 import * as openai from './openaiService';
 import type { 
@@ -12,7 +13,9 @@ import type {
     ReinforcementContent, 
     AdvancedReinforcementContent,
     WeightedConcept,
-    WeakPoint
+    WeakPoint,
+    // FIX: Import GenerationProgress to be used in function signatures.
+    GenerationProgress
 } from '../types';
 import { USE_AI_API } from '../config';
 
@@ -31,7 +34,19 @@ export const generateTopicTitle = (provider: ApiProvider, apiKey: string, text: 
     return getService(provider).generateTopicTitle(apiKey, text, options);
 };
 
-export const generateMicroLessons = (provider: ApiProvider, apiKey: string, text: string, context: AcademicContext, options?: { signal?: AbortSignal }): Promise<MicroLesson[]> => {
+// FIX: Updated the signature for generateMicroLessons to support progress tracking and a structured return type, ensuring compatibility between different AI providers.
+export const generateMicroLessons = (
+    provider: ApiProvider,
+    apiKey: string,
+    text: string,
+    context: AcademicContext,
+    options: {
+        signal?: AbortSignal;
+        onProgress: (progress: GenerationProgress) => void;
+        requestId: string;
+        chunkIndexesToProcess?: number[];
+    }
+): Promise<{ lessons: MicroLesson[]; failedChunkIndexes: number[] }> => {
     return getService(provider).generateMicroLessons(apiKey, text, context, options);
 };
 

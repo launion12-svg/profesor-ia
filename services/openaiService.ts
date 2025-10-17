@@ -1,3 +1,4 @@
+
 import type { 
     AcademicContext, 
     ExplorationData, 
@@ -10,7 +11,9 @@ import type {
     AdvancedReinforcementContent,
     WeightedConcept,
     CheckQuestion,
-    WeakPoint
+    WeakPoint,
+    // FIX: Import GenerationProgress for type consistency.
+    GenerationProgress
 } from '../types';
 
 const MOCK_DELAY = 300;
@@ -27,46 +30,60 @@ export const classifyContent = (apiKey: string, text: string, options?: { signal
 
 export const generateTopicTitle = (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<string> => mock("Título de Ejemplo (OpenAI)");
 
-export const generateMicroLessons = (apiKey: string, text: string, context: AcademicContext, options?: { signal?: AbortSignal }): Promise<MicroLesson[]> => mock([
-    {
-        id: 'mock-lesson-1',
-        title: "Concepto Clave de Muestra",
-        content: "Este es el contenido principal de la micro-lección de muestra. Aquí se explicaría un concepto fundamental del texto proporcionado, pero como esto es un mock, solo ves este texto de ejemplo.",
-        analogy: "Imagina que es como construir con bloques de LEGO; cada pieza es simple, pero juntas crean algo complejo.",
-        keyPoints: ["Punto clave 1 de ejemplo.", "Punto clave 2 de ejemplo.", "Punto clave 3 de ejemplo."],
-        checkQuestion: {
-            question: "¿Cuál es el propósito de un mock en el desarrollo de software? (Básica)",
-            idealAnswer: "Un mock simula el comportamiento de código real para permitir el desarrollo y las pruebas de forma aislada.",
-            concepts: [
-                { idea: "Simula comportamiento", weight: 0.6 },
-                { idea: "Desarrollo y pruebas aisladas", weight: 0.4 }
-            ],
-            passingThreshold: 0.6
-        },
-        advancedQuestion: {
-            question: "¿Qué problemas podrían surgir si un mock no refleja con precisión el comportamiento de la API real? (Avanzada)",
-            idealAnswer: "Podrían surgir problemas de integración, errores inesperados en producción y una falsa sensación de seguridad durante las pruebas.",
-            concepts: [
-                { idea: "Problemas de integración", weight: 0.5 },
-                { idea: "Errores en producción", weight: 0.3 },
-                { idea: "Falsa sensación de seguridad", weight: 0.2 }
-            ],
-            passingThreshold: 0.7
-        },
-        quizContext: {
-            lessonTitle: "Concepto Clave de Muestra",
-            cleanedText: "Este es el contenido principal de la micro-lección de muestra. Aquí se explicaría un concepto fundamental del texto proporcionado, pero como esto es un mock, solo ves este texto de ejemplo.",
-            keyPoints: ["Punto clave 1 de ejemplo.", "Punto clave 2 de ejemplo.", "Punto clave 3 de ejemplo."],
-            quizSeeds: [
-                {
-                    stem: "¿Cuál es el primer punto clave?",
-                    answer: "Punto clave 1 de ejemplo.",
-                    distractors: ["Un punto incorrecto", "Otro distractor", "Punto clave 2 de ejemplo."]
-                }
-            ]
-        }
+// FIX: Updated the signature and return type to match the geminiService for compatibility with the aiService router.
+export const generateMicroLessons = (
+    apiKey: string,
+    text: string,
+    context: AcademicContext,
+    options: {
+        signal?: AbortSignal;
+        onProgress: (progress: GenerationProgress) => void;
+        requestId: string;
+        chunkIndexesToProcess?: number[];
     }
-]);
+): Promise<{ lessons: MicroLesson[]; failedChunkIndexes: number[] }> => mock({
+    lessons: [
+        {
+            id: 'mock-lesson-1',
+            title: "Concepto Clave de Muestra",
+            content: "Este es el contenido principal de la micro-lección de muestra. Aquí se explicaría un concepto fundamental del texto proporcionado, pero como esto es un mock, solo ves este texto de ejemplo.",
+            analogy: "Imagina que es como construir con bloques de LEGO; cada pieza es simple, pero juntas crean algo complejo.",
+            keyPoints: ["Punto clave 1 de ejemplo.", "Punto clave 2 de ejemplo.", "Punto clave 3 de ejemplo."],
+            checkQuestion: {
+                question: "¿Cuál es el propósito de un mock en el desarrollo de software? (Básica)",
+                idealAnswer: "Un mock simula el comportamiento de código real para permitir el desarrollo y las pruebas de forma aislada.",
+                concepts: [
+                    { idea: "Simula comportamiento", weight: 0.6 },
+                    { idea: "Desarrollo y pruebas aisladas", weight: 0.4 }
+                ],
+                passingThreshold: 0.6
+            },
+            advancedQuestion: {
+                question: "¿Qué problemas podrían surgir si un mock no refleja con precisión el comportamiento de la API real? (Avanzada)",
+                idealAnswer: "Podrían surgir problemas de integración, errores inesperados en producción y una falsa sensación de seguridad durante las pruebas.",
+                concepts: [
+                    { idea: "Problemas de integración", weight: 0.5 },
+                    { idea: "Errores en producción", weight: 0.3 },
+                    { idea: "Falsa sensación de seguridad", weight: 0.2 }
+                ],
+                passingThreshold: 0.7
+            },
+            quizContext: {
+                lessonTitle: "Concepto Clave de Muestra",
+                cleanedText: "Este es el contenido principal de la micro-lección de muestra. Aquí se explicaría un concepto fundamental del texto proporcionado, pero como esto es un mock, solo ves este texto de ejemplo.",
+                keyPoints: ["Punto clave 1 de ejemplo.", "Punto clave 2 de ejemplo.", "Punto clave 3 de ejemplo."],
+                quizSeeds: [
+                    {
+                        stem: "¿Cuál es el primer punto clave?",
+                        answer: "Punto clave 1 de ejemplo.",
+                        distractors: ["Un punto incorrecto", "Otro distractor", "Punto clave 2 de ejemplo."]
+                    }
+                ]
+            }
+        }
+    ],
+    failedChunkIndexes: []
+});
 
 export const generateExplorationData = (apiKey: string, text: string, options?: { signal?: AbortSignal }): Promise<ExplorationData> => mock({
     topicMap: ["Tema Principal 1 (Mock)", "Tema Principal 2 (Mock)", "Tema Principal 3 (Mock)"],

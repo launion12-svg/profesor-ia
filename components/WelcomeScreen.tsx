@@ -86,6 +86,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
   const hasCompletedSessions = completedSessions.length > 0;
   const hasWeakConcepts = weakPoints.length > 0 || pausedSessions.some(s => s.weakConcepts.length > 0);
 
+  const pendingGenerationSessions = pausedSessions.filter(s => s.status === 'pending_generation');
+  const safeModeSessions = pendingGenerationSessions.filter(s => !s.microLessons || s.microLessons.length === 0);
+  const partialSessions = pendingGenerationSessions.filter(s => s.microLessons && s.microLessons.length > 0);
+  const regularPausedSessions = pausedSessions.filter(s => s.status === 'paused');
+
   useEffect(() => {
     const checkPendingReview = () => {
         const pendingDataString = localStorage.getItem('pendingPracticeReview');
@@ -222,33 +227,34 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
 
       {weakPoints.length > 0 && <TopicsToReinforceCard weakPoints={weakPoints} onStartReview={onStartFocusedReview} />}
 
-      {pausedSessions.map(s => s.status).includes('pending_generation') && (
+      {(safeModeSessions.length > 0 || partialSessions.length > 0) && (
         <div className="w-full mb-10 animate-fade-in">
           <h3 className="text-2xl font-bold mb-4 flex items-center justify-center text-gray-300">
             <BookmarkIcon />
-            <span className="ml-2">Sesiones en Modo Seguro</span>
+            <span className="ml-2">Sesiones Pendientes de IA</span>
           </h3>
           <div className="space-y-3 p-4 bg-gray-800/50 border border-amber-500/50 rounded-lg">
-             {pausedSessions.filter(s => s.status === 'pending_generation').map(session => (
+             {partialSessions.map(session => (
               <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
                 <div className="flex-grow text-left">
                   <p className="font-semibold text-gray-200">{session.title}</p>
-                  <p className="text-sm text-amber-400">Listo para generar contenido con IA.</p>
+                  <p className="text-sm text-amber-400">Generación parcial. Faltan {session.pendingChunkData?.indexes.length} fragmentos por procesar.</p>
                 </div>
                 <div className="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
-                   <button
-                    onClick={() => onDiscard(session.id)}
-                    className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full transition-colors"
-                    title="Descartar sesión"
-                  >
-                    <TrashIcon />
-                  </button>
-                  <button
-                    onClick={() => onResume(session.id)}
-                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                  >
-                    Generar ahora
-                  </button>
+                   <button onClick={() => onDiscard(session.id)} className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full" title="Descartar sesión"><TrashIcon /></button>
+                   <button onClick={() => onResume(session.id)} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg">Completar Generación</button>
+                </div>
+              </div>
+            ))}
+             {safeModeSessions.map(session => (
+              <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
+                <div className="flex-grow text-left">
+                  <p className="font-semibold text-gray-200">{session.title}</p>
+                  <p className="text-sm text-amber-400">Modo Seguro: Listo para generar contenido con IA.</p>
+                </div>
+                <div className="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
+                   <button onClick={() => onDiscard(session.id)} className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full" title="Descartar sesión"><TrashIcon /></button>
+                   <button onClick={() => onResume(session.id)} className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg">Generar ahora</button>
                 </div>
               </div>
             ))}
@@ -256,14 +262,14 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
         </div>
       )}
 
-      {pausedSessions.filter(s => s.status === 'paused').length > 0 && (
+      {regularPausedSessions.length > 0 && (
         <div className="w-full mb-10 animate-fade-in">
           <h3 className="text-2xl font-bold mb-4 flex items-center justify-center text-gray-300">
             <BookmarkIcon />
             <span className="ml-2">Sesiones Guardadas</span>
           </h3>
           <div className="space-y-3 max-h-80 overflow-y-auto pr-2 bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-            {pausedSessions.filter(s => s.status === 'paused').map(session => (
+            {regularPausedSessions.map(session => (
               <div key={session.id} className="bg-gray-900/70 rounded-lg p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center transition-colors hover:bg-gray-800 gap-4">
                 <div className="flex-grow text-left">
                   <p className="font-semibold text-gray-200">{session.title}</p>
@@ -273,19 +279,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
                    </p>
                 </div>
                 <div className="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
-                  <button
-                    onClick={() => onDiscard(session.id)}
-                    className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full transition-colors"
-                    title="Descartar sesión"
-                  >
-                    <TrashIcon />
-                  </button>
-                  <button
-                    onClick={() => onResume(session.id)}
-                    className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                  >
-                    Reanudar
-                  </button>
+                  <button onClick={() => onDiscard(session.id)} className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full" title="Descartar sesión"><TrashIcon /></button>
+                  <button onClick={() => onResume(session.id)} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg">Reanudar</button>
                 </div>
               </div>
             ))}
@@ -319,25 +314,9 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onStart, onExploreT
                   )}
                 </div>
                 <div className="flex items-center space-x-2 flex-shrink-0 self-end sm:self-center">
-                  <button
-                    onClick={() => onTopicReview(session.id)}
-                    className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
-                  >
-                    Repasar Tema
-                  </button>
-                  <button
-                    onClick={() => onReview(session.id)}
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                  >
-                    Ver Resumen
-                  </button>
-                  <button
-                    onClick={() => onDiscard(session.id)}
-                    className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full transition-colors"
-                    title="Eliminar del historial"
-                  >
-                    <TrashIcon />
-                  </button>
+                  <button onClick={() => onTopicReview(session.id)} className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg text-sm">Repasar Tema</button>
+                  <button onClick={() => onReview(session.id)} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg">Ver Resumen</button>
+                  <button onClick={() => onDiscard(session.id)} className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/50 rounded-full" title="Eliminar del historial"><TrashIcon /></button>
                 </div>
               </div>
             ))}

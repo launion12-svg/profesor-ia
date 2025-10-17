@@ -11,6 +11,7 @@ interface ProcessingPipelineModalProps {
   onCancel: () => void;
   onRetry?: () => void;
   onUseSafeMode?: () => void;
+  progressDetails?: { done: number; total: number };
 }
 
 const PHASES_CONFIG: Record<PipelinePhase, { label: string; progress: number }> = {
@@ -26,12 +27,22 @@ const PHASES_CONFIG: Record<PipelinePhase, { label: string; progress: number }> 
 };
 
 const ProcessingPipelineModal: React.FC<ProcessingPipelineModalProps> = ({
-  isOpen, phase, logs, error, onCancel, onRetry, onUseSafeMode
+  isOpen, phase, logs, error, onCancel, onRetry, onUseSafeMode, progressDetails
 }) => {
   if (!isOpen) return null;
   
   const config = PHASES_CONFIG[error ? 'error' : phase];
-  const progress = error ? 100 : config.progress;
+  
+  let label = config.label;
+  if (phase === 'callingLLM' && progressDetails && progressDetails.total > 0 && !error) {
+      label = `Generando lecciones con IA... (chunk ${progressDetails.done}/${progressDetails.total})`;
+  }
+  
+  const progress = error ? 100 
+    : (phase === 'callingLLM' && progressDetails && progressDetails.total > 0) 
+      ? PHASES_CONFIG.callingLLM.progress + ((progressDetails.done / progressDetails.total) * (PHASES_CONFIG.creating_session.progress - PHASES_CONFIG.callingLLM.progress))
+      : config.progress;
+      
   const progressColor = error ? 'bg-red-500' : 'bg-indigo-500';
 
   return (
@@ -45,7 +56,7 @@ const ProcessingPipelineModal: React.FC<ProcessingPipelineModalProps> = ({
             style={{ width: `${progress}%` }}
           ></div>
         </div>
-        <p className="text-center font-semibold text-indigo-300 mb-6">{config.label}</p>
+        <p className="text-center font-semibold text-indigo-300 mb-6 h-6">{label}</p>
 
         {error ? (
           <div className="text-center bg-red-900/50 border border-red-500/50 p-4 rounded-lg">

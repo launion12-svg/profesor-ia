@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export type StudyMethod = 'pomodoro' | 'long';
@@ -157,6 +158,12 @@ export interface StudySession {
   };
   practiceMetrics?: PracticeMetrics;
   reinforcementEvents?: ReinforcementEvent[];
+
+  // Pipeline-specific data for partial generation
+  pendingChunkData?: {
+    indexes: number[];
+    chunkSize: number;
+  };
 }
 
 
@@ -205,3 +212,13 @@ export interface WeakPoint {
 }
 
 export type PipelinePhase = 'starting' | 'parsing' | 'validating' | 'chunking' | 'callingLLM' | 'creating_session' | 'done' | 'error' | 'cancelled';
+
+// FIX: Added GenerationProgress interface to be shared across services.
+export interface GenerationProgress {
+  done: number;
+  total: number;
+  chunkIndex: number;
+  status: 'success' | 'failure';
+  result?: MicroLesson[];
+  error?: any;
+}
